@@ -1,4 +1,4 @@
-package com.blackroth.training.usermanagement;
+package com.company.mobilebackend;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
