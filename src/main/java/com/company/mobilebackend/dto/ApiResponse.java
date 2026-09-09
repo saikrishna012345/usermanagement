@@ -1,11 +1,15 @@
 package com.company.mobilebackend.dto;
 
+import java.time.LocalDateTime;
+
 public class ApiResponse<T> {
 
     private boolean success;
+    private Integer status;
     private String message;
     private T data;
     private String errorCode;
+    private LocalDateTime timestamp;
 
     private ApiResponse() {
     }
@@ -18,11 +22,13 @@ public class ApiResponse<T> {
         return response;
     }
 
-    public static <T> ApiResponse<T> error(String message, String errorCode) {
+    public static <T> ApiResponse<T> error(String message, String errorCode, int status) {
         ApiResponse<T> response = new ApiResponse<>();
         response.success = false;
         response.message = message;
         response.errorCode = errorCode;
+        response.status = status;
+        response.timestamp = LocalDateTime.now();
         return response;
     }
 
@@ -32,6 +38,10 @@ public class ApiResponse<T> {
 
     public boolean isSuccess() {
         return success;
+    }
+
+    public Integer getStatus() {
+        return status;
     }
 
     public String getMessage() {
@@ -46,4 +56,7 @@ public class ApiResponse<T> {
         return errorCode;
     }
 
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
 }

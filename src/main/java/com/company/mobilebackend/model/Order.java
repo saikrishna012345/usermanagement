@@ -3,6 +3,8 @@ package com.company.mobilebackend.model;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -29,8 +31,9 @@ public class Order {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status;
+    private OrderStatus status;
 
     @Column(nullable = false)
     private BigDecimal totalAmount;
@@ -44,7 +47,7 @@ public class Order {
     public Order() {
     }
 
-    public Order(User user, String status, BigDecimal totalAmount) {
+    public Order(User user, OrderStatus status, BigDecimal totalAmount) {
         this.user = user;
         this.status = status;
         this.totalAmount = totalAmount;
@@ -60,15 +63,47 @@ public class Order {
         item.setOrder(this);
     }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public User getUser() { return user; }
-    public void setUser(User user) { this.user = user; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public BigDecimal getTotalAmount() { return totalAmount; }
-    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public List<OrderItem> getOrderItems() { return orderItems; }
-    public void setOrderItems(List<OrderItem> orderItems) { this.orderItems = orderItems; }
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public OrderStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(OrderStatus status) {
+        this.status = status;
+    }
+
+    public BigDecimal getTotalAmount() {
+        return totalAmount;
+    }
+
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public List<OrderItem> getOrderItems() {
+        return orderItems;
+    }
+
+    public void setOrderItems(List<OrderItem> orderItems) {
+        this.orderItems = orderItems;
+    }
 }

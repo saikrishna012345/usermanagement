@@ -1,5 +1,7 @@
 package com.company.mobilebackend.dto;
 
+import com.company.mobilebackend.model.OrderStatus;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -7,7 +9,7 @@ import java.util.List;
 public class OrderResponse {
     private Long id;
     private Long userId;
-    private String status;
+    private OrderStatus status;
     private BigDecimal totalAmount;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
@@ -15,7 +17,7 @@ public class OrderResponse {
     public OrderResponse() {
     }
 
-    public OrderResponse(Long id, Long userId, String status, BigDecimal totalAmount,
+    public OrderResponse(Long id, Long userId, OrderStatus status, BigDecimal totalAmount,
                          LocalDateTime createdAt, List<OrderItemResponse> items) {
         this.id = id;
         this.userId = userId;
@@ -27,7 +29,7 @@ public class OrderResponse {
 
     public Long getId() { return id; }
     public Long getUserId() { return userId; }
-    public String getStatus() { return status; }
+    public OrderStatus getStatus() { return status; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public List<OrderItemResponse> getItems() { return items; }

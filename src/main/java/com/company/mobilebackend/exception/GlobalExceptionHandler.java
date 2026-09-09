@@ -16,20 +16,44 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<ApiResponse<Object>> handleUserNotFound(UserNotFoundException ex) {
-        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "USER_NOT_FOUND");
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "USER_NOT_FOUND", 404);
         return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(DuplicateUserException.class)
     public ResponseEntity<ApiResponse<Object>> handleDuplicateUser(DuplicateUserException ex) {
-        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "DUPLICATE_USER");
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "DUPLICATE_USER", 409);
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(InvalidUserException.class)
     public ResponseEntity<ApiResponse<Object>> handleInvalidUser(InvalidUserException ex) {
-        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_USER");
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_USER", 400);
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidCredentials(InvalidCredentialsException ex) {
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_CREDENTIALS", 401);
+        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleResourceNotFound(ResourceNotFoundException ex) {
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "RESOURCE_NOT_FOUND", 404);
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidRequest(InvalidRequestException ex) {
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_REQUEST", 400);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException ex) {
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "BUSINESS_RULE_VIOLATION", 409);
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -38,7 +62,7 @@ public class GlobalExceptionHandler {
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             fieldErrors.put(error.getField(), error.getDefaultMessage());
         }
-        ApiResponse<Object> response = ApiResponse.error("Validation failed", "VALIDATION_ERROR");
+        ApiResponse<Object> response = ApiResponse.error("Validation failed", "VALIDATION_ERROR", 400);
         response.setData(fieldErrors);
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
@@ -46,14 +70,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGenericException(Exception ex) {
         ApiResponse<Object> response = ApiResponse.error(
-                "Something went wrong. Please try again later.", "INTERNAL_SERVER_ERROR");
+                "Something went wrong. Please try again later.", "INTERNAL_SERVER_ERROR", 500);
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-
-    @ExceptionHandler(InvalidCredentialsException.class)
-    public ResponseEntity<ApiResponse<Object>> handleInvalidCredentials(InvalidCredentialsException ex) {
-        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_CREDENTIALS");
-        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
-    }
-
 }
