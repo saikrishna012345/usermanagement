@@ -29,8 +29,14 @@ public class User {
     @Column(name = "mobile_number", nullable = false, unique = true)
     private String mobileNumber;
 
-    @Column(name = "password", nullable = false)
-    private String password;
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
+
+    @Column(nullable = false)
+    private String role;
+
+    @Column(nullable = false)
+    private Boolean enabled = true;
 
     @Column(name = "status")
     private String status;
@@ -45,13 +51,15 @@ public class User {
     }
 
     public User(String firstName, String lastName, String email, String mobileNumber,
-                String password, String status) {
+                String passwordHash, String role, String status) {
         this.firstName = firstName;
         this.lastName = lastName;
         this.email = email;
         this.mobileNumber = mobileNumber;
-        this.password = password;
+        this.passwordHash = passwordHash;
+        this.role = role;
         this.status = status;
+        this.enabled = true;
     }
 
     @jakarta.persistence.PrePersist
@@ -105,12 +113,28 @@ public class User {
         this.mobileNumber = mobileNumber;
     }
 
-    public String getPassword() {
-        return password;
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
-    public void setPassword(String password) {
-        this.password = password;
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
     }
 
     public String getStatus() {
