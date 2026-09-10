@@ -3,6 +3,7 @@ package com.company.mobilebackend.controller;
 import com.company.mobilebackend.dto.ApiResponse;
 import com.company.mobilebackend.dto.OrderRequest;
 import com.company.mobilebackend.dto.OrderResponse;
+import com.company.mobilebackend.dto.OrderStatusUpdateRequest;
 import com.company.mobilebackend.service.OrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -63,6 +64,40 @@ public class OrderController {
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(@PathVariable Long id) {
         OrderResponse cancelled = orderService.cancelOrder(id);
         ApiResponse<OrderResponse> response = ApiResponse.success("Order cancelled successfully", cancelled);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/api/admin/orders")
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getAllOrdersAdmin() {
+        List<OrderResponse> orders = orderService.getAllOrders();
+        ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/api/admin/orders/{id}/status")
+    public ResponseEntity<ApiResponse<OrderResponse>> updateOrderStatusAdmin(
+            @PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
+        OrderResponse updated = orderService.updateOrderStatus(id, request.getStatus());
+        ApiResponse<OrderResponse> response = ApiResponse.success("Order status updated successfully", updated);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasRole('DRIVER')")
+    @GetMapping("/api/driver/orders")
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getDriverOrders() {
+        List<OrderResponse> orders = orderService.getAllOrders();
+        ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasRole('DRIVER')")
+    @PutMapping("/api/driver/orders/{id}/status")
+    public ResponseEntity<ApiResponse<OrderResponse>> updateDriverOrderStatus(
+            @PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
+        OrderResponse updated = orderService.updateOrderStatus(id, request.getStatus());
+        ApiResponse<OrderResponse> response = ApiResponse.success("Delivery status updated successfully", updated);
         return ResponseEntity.ok(response);
     }
 }

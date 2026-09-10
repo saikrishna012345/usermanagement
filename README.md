@@ -128,3 +128,14 @@ Error:
 See `API_DOCUMENTATION.md` for the full endpoint reference, and import
 `postman_collection_phase2.json` into Postman for the complete request set,
 including negative and validation test cases.   
+
+
+## Authentication & Security
+
+- Passwords are hashed with BCrypt before storage — never stored or returned in plain text.
+- Login issues a short-lived JWT access token (15 min) and a longer-lived opaque refresh token (7 days, stored server-side so it can be revoked on logout).
+- Protected endpoints require `Authorization: Bearer <accessToken>`.
+- Roles: USER, ADMIN, DRIVER — enforced via `@PreAuthorize` at the method level.
+- Order endpoints additionally enforce ownership: a USER can only view/cancel their own orders; ADMIN can access any order.
+- CORS is currently open (`*`) for development; restrict `allowedOrigins` in `SecurityConfig` before any production deployment.
+- JWT secret and token lifetimes are externalized in `application.properties` (`app.jwt.*`) — never hard-coded in source.

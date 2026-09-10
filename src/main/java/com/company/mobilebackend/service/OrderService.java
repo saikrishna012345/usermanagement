@@ -131,6 +131,21 @@ public class OrderService {
         return toResponse(updated);
     }
 
+    public OrderResponse updateOrderStatus(Long id, OrderStatus newStatus) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+        order.setStatus(newStatus);
+        Order updated = orderRepository.save(order);
+        return toResponse(updated);
+    }
+
+    public List<OrderResponse> getAllOrders() {
+        return orderRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
     private boolean isCurrentUserAdmin() {
         return org.springframework.security.core.context.SecurityContextHolder.getContext()
                 .getAuthentication().getAuthorities().stream()

@@ -1,10 +1,6 @@
 package com.company.mobilebackend.controller;
 
-import com.company.mobilebackend.dto.ApiResponse;
-import com.company.mobilebackend.dto.LoginRequest;
-import com.company.mobilebackend.dto.LoginResponse;
-import com.company.mobilebackend.dto.RegisterRequest;
-import com.company.mobilebackend.dto.RegisterResponse;
+import com.company.mobilebackend.dto.*;
 import com.company.mobilebackend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -35,6 +31,20 @@ public class AuthController {
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse loginResponse = authService.login(request);
         ApiResponse<LoginResponse> response = ApiResponse.success("Login successful", loginResponse);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<TokenRefreshResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        TokenRefreshResponse tokens = authService.refreshAccessToken(request.getRefreshToken());
+        ApiResponse<TokenRefreshResponse> response = ApiResponse.success("Token refreshed successfully", tokens);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Object>> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        authService.logout(request.getRefreshToken());
+        ApiResponse<Object> response = ApiResponse.success("Logged out successfully", null);
         return ResponseEntity.ok(response);
     }
 }

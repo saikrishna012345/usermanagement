@@ -73,4 +73,10 @@ public class GlobalExceptionHandler {
                 "Something went wrong. Please try again later.", "INTERNAL_SERVER_ERROR", 500);
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidToken(InvalidTokenException ex) {
+        ApiResponse<Object> response = ApiResponse.error(ex.getMessage(), "INVALID_TOKEN", 401);
+        return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    }
 }
