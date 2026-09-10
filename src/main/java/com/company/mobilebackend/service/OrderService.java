@@ -14,6 +14,8 @@ import com.company.mobilebackend.model.User;
 import com.company.mobilebackend.repository.OrderRepository;
 import com.company.mobilebackend.repository.ProductRepository;
 import com.company.mobilebackend.repository.UserRepository;
+import com.company.mobilebackend.security.SecurityUtils;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,7 +71,27 @@ public class OrderService {
     public OrderResponse getOrderById(Long id) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+
+        String currentEmail = SecurityUtils.getCurrentUserEmail();
+        boolean isOwner = order.getUser().getEmail().equals(currentEmail);
+        boolean isAdmin = isCurrentUserAdmin();
+
+        if (!isOwner && !isAdmin) {
+            throw new AccessDeniedException("You do not have permission to view this order");
+        }
+
         return toResponse(order);
+    }
+
+    public List<OrderResponse> getMyOrders() {
+        String currentEmail = SecurityUtils.getCurrentUserEmail();
+        User user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        return orderRepository.findByUserId(user.getId())
+                .stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
     }
 
     public List<OrderResponse> getOrdersByUser(Long userId) {
@@ -87,6 +109,13 @@ public class OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
 
+        String currentEmail = SecurityUtils.getCurrentUserEmail();
+        boolean isOwner = order.getUser().getEmail().equals(currentEmail);
+
+        if (!isOwner) {
+            throw new AccessDeniedException("You can only cancel your own orders");
+        }
+
         if (OrderStatus.CANCELLED.equals(order.getStatus())) {
             throw new BusinessException("Order is already cancelled");
         }
@@ -100,6 +129,12 @@ public class OrderService {
         order.setStatus(OrderStatus.CANCELLED);
         Order updated = orderRepository.save(order);
         return toResponse(updated);
+    }
+
+    private boolean isCurrentUserAdmin() {
+        return org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 
     private OrderResponse toResponse(Order order) {

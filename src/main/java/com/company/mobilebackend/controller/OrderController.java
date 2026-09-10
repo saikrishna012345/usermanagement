@@ -7,12 +7,12 @@ import com.company.mobilebackend.service.OrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -26,6 +26,7 @@ public class OrderController {
         this.orderService = orderService;
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PostMapping("/api/orders")
     public ResponseEntity<ApiResponse<OrderResponse>> createOrder(@Valid @RequestBody OrderRequest request) {
         OrderResponse created = orderService.createOrder(request);
@@ -33,6 +34,15 @@ public class OrderController {
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/api/orders/my")
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getMyOrders() {
+        List<OrderResponse> orders = orderService.getMyOrders();
+        ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/api/orders/{id}")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(@PathVariable Long id) {
         OrderResponse order = orderService.getOrderById(id);
@@ -40,6 +50,7 @@ public class OrderController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/api/users/{userId}/orders")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getOrdersByUser(@PathVariable Long userId) {
         List<OrderResponse> orders = orderService.getOrdersByUser(userId);
@@ -47,6 +58,7 @@ public class OrderController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/api/orders/{id}/cancel")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(@PathVariable Long id) {
         OrderResponse cancelled = orderService.cancelOrder(id);
