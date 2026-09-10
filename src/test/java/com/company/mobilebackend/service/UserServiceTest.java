@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,9 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private UserService userService;
 
@@ -44,21 +48,30 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        existingUser = new User("Sai", "Krishna", "sai@example.com", "9876543210", "secret123", "ACTIVE");
+        existingUser = new User("Sai", "Krishna", "sai@example.com", "9876543210",
+                "hashed_secret123", "USER", "ACTIVE");
         existingUser.setId(1L);
 
-        validRequest = new UserRequest("Sai", "Krishna", "sai@example.com", "9876543210", "secret123", "ACTIVE");
+        validRequest = new UserRequest();
+        validRequest.setFirstName("Sai");
+        validRequest.setLastName("Krishna");
+        validRequest.setEmail("sai@example.com");
+        validRequest.setMobileNumber("9876543210");
+        validRequest.setPassword("secret123");
+        validRequest.setStatus("ACTIVE");
     }
 
     @Test
     void createUser_savesSuccessfully_whenNoDuplicates() {
         when(userRepository.existsByEmail(validRequest.getEmail())).thenReturn(false);
         when(userRepository.existsByMobileNumber(validRequest.getMobileNumber())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_secret123");
         when(userRepository.save(any(User.class))).thenReturn(existingUser);
 
         UserResponse response = userService.createUser(validRequest);
 
         assertThat(response.getEmail()).isEqualTo("sai@example.com");
+        assertThat(response.getRole()).isEqualTo("USER");
         verify(userRepository, times(1)).save(any(User.class));
     }
 
@@ -97,16 +110,43 @@ class UserServiceTest {
     }
 
     @Test
-    void updateUser_updatesFields_whenUserExists() {
-        UserRequest updateRequest = new UserRequest("Updated", "Name", "updated@example.com", "9999999999", "newpass", "INACTIVE");
+    void updateUser_updatesFields_withoutTouchingPassword_whenPasswordOmitted() {
+        UserRequest updateRequest = new UserRequest();
+        updateRequest.setFirstName("Updated");
+        updateRequest.setLastName("Name");
+        updateRequest.setEmail("updated@example.com");
+        updateRequest.setMobileNumber("9999999999");
+        updateRequest.setStatus("INACTIVE");
+
         when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
         when(userRepository.save(any(User.class))).thenReturn(existingUser);
 
-        UserResponse response = userService.updateUser(1L, updateRequest);
+        userService.updateUser(1L, updateRequest);
 
         assertThat(existingUser.getFirstName()).isEqualTo("Updated");
-        assertThat(existingUser.getEmail()).isEqualTo("updated@example.com");
+        assertThat(existingUser.getPasswordHash()).isEqualTo("hashed_secret123");
+        verify(passwordEncoder, never()).encode(anyString());
         verify(userRepository, times(1)).save(existingUser);
+    }
+
+    @Test
+    void updateUser_rehashesPassword_whenPasswordProvided() {
+        UserRequest updateRequest = new UserRequest();
+        updateRequest.setFirstName("Sai");
+        updateRequest.setLastName("Krishna");
+        updateRequest.setEmail("sai@example.com");
+        updateRequest.setMobileNumber("9876543210");
+        updateRequest.setPassword("newpassword123");
+        updateRequest.setStatus("ACTIVE");
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(existingUser));
+        when(passwordEncoder.encode("newpassword123")).thenReturn("hashed_newpassword123");
+        when(userRepository.save(any(User.class))).thenReturn(existingUser);
+
+        userService.updateUser(1L, updateRequest);
+
+        assertThat(existingUser.getPasswordHash()).isEqualTo("hashed_newpassword123");
+        verify(passwordEncoder, times(1)).encode("newpassword123");
     }
 
     @Test

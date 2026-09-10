@@ -1,9 +1,8 @@
 package com.company.mobilebackend.service;
 
-import com.company.mobilebackend.dto.LoginRequest;
-import com.company.mobilebackend.dto.LoginResponse;
-import com.company.mobilebackend.exception.InvalidCredentialsException;
-import com.company.mobilebackend.model.User;
+import com.company.mobilebackend.dto.RegisterRequest;
+import com.company.mobilebackend.dto.RegisterResponse;
+import com.company.mobilebackend.exception.DuplicateUserException;
 import com.company.mobilebackend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,12 +10,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Optional;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -24,50 +26,54 @@ class AuthServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private AuthService authService;
 
-    private User existingUser;
+    private RegisterRequest validRequest;
 
     @BeforeEach
     void setUp() {
-        existingUser = new User("Sai", "Krishna", "sai@example.com", "9876543210", "secret123", "ACTIVE");
-        existingUser.setId(1L);
+        validRequest = new RegisterRequest();
+        validRequest.setFirstName("Sai");
+        validRequest.setLastName("Krishna");
+        validRequest.setEmail("sai@example.com");
+        validRequest.setMobileNumber("9876543210");
+        validRequest.setPassword("secret123");
     }
 
     @Test
-    void login_succeeds_withCorrectCredentials() {
-        LoginRequest request = new LoginRequest();
-        request.setEmail("sai@example.com");
-        request.setPassword("secret123");
+    void register_succeeds_andHashesPassword_whenNoDuplicates() {
+        when(userRepository.existsByEmail(validRequest.getEmail())).thenReturn(false);
+        when(userRepository.existsByMobileNumber(validRequest.getMobileNumber())).thenReturn(false);
+        when(passwordEncoder.encode("secret123")).thenReturn("hashed_secret123");
+        when(userRepository.save(any())).thenAnswer(invocation -> {
+            var user = invocation.getArgument(0, com.company.mobilebackend.model.User.class);
+            user.setId(1L);
+            return user;
+        });
 
-        when(userRepository.findByEmail("sai@example.com")).thenReturn(Optional.of(existingUser));
-
-        LoginResponse response = authService.login(request);
+        RegisterResponse response = authService.register(validRequest);
 
         assertThat(response.getEmail()).isEqualTo("sai@example.com");
-        assertThat(response.getUserId()).isEqualTo(1L);
+        assertThat(response.getRole()).isEqualTo("USER");
     }
 
     @Test
-    void login_throwsInvalidCredentialsException_withWrongPassword() {
-        LoginRequest request = new LoginRequest();
-        request.setEmail("sai@example.com");
-        request.setPassword("wrongpassword");
+    void register_throwsDuplicateUserException_whenEmailExists() {
+        when(userRepository.existsByEmail(validRequest.getEmail())).thenReturn(true);
 
-        when(userRepository.findByEmail("sai@example.com")).thenReturn(Optional.of(existingUser));
-
-        assertThrows(InvalidCredentialsException.class, () -> authService.login(request));
+        assertThrows(DuplicateUserException.class, () -> authService.register(validRequest));
+        verify(passwordEncoder, never()).encode(anyString());
     }
 
     @Test
-    void login_throwsInvalidCredentialsException_withUnknownEmail() {
-        LoginRequest request = new LoginRequest();
-        request.setEmail("unknown@example.com");
-        request.setPassword("anything");
+    void register_throwsDuplicateUserException_whenMobileNumberExists() {
+        when(userRepository.existsByEmail(validRequest.getEmail())).thenReturn(false);
+        when(userRepository.existsByMobileNumber(validRequest.getMobileNumber())).thenReturn(true);
 
-        when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
-
-        assertThrows(InvalidCredentialsException.class, () -> authService.login(request));
+        assertThrows(DuplicateUserException.class, () -> authService.register(validRequest));
     }
 }
