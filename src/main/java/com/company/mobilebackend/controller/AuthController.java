@@ -1,6 +1,12 @@
 package com.company.mobilebackend.controller;
 
-import com.company.mobilebackend.dto.*;
+import com.company.mobilebackend.dto.ApiResponse;
+import com.company.mobilebackend.dto.LoginRequest;
+import com.company.mobilebackend.dto.LoginResponse;
+import com.company.mobilebackend.dto.RefreshTokenRequest;
+import com.company.mobilebackend.dto.RegisterRequest;
+import com.company.mobilebackend.dto.RegisterResponse;
+import com.company.mobilebackend.dto.TokenRefreshResponse;
 import com.company.mobilebackend.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -11,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/v1/auth")
 public class AuthController {
 
     private final AuthService authService;

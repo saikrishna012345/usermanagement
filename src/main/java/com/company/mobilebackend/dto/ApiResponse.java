@@ -19,6 +19,7 @@ public class ApiResponse<T> {
         response.success = true;
         response.message = message;
         response.data = data;
+        response.timestamp = LocalDateTime.now();
         return response;
     }
 
@@ -32,31 +33,11 @@ public class ApiResponse<T> {
         return response;
     }
 
-    public void setData(T data) {
-        this.data = data;
-    }
-
-    public boolean isSuccess() {
-        return success;
-    }
-
-    public Integer getStatus() {
-        return status;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public T getData() {
-        return data;
-    }
-
-    public String getErrorCode() {
-        return errorCode;
-    }
-
-    public LocalDateTime getTimestamp() {
-        return timestamp;
-    }
+    public void setData(T data) { this.data = data; }
+    public boolean isSuccess() { return success; }
+    public Integer getStatus() { return status; }
+    public String getMessage() { return message; }
+    public T getData() { return data; }
+    public String getErrorCode() { return errorCode; }
+    public LocalDateTime getTimestamp() { return timestamp; }
 }

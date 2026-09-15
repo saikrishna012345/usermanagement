@@ -14,11 +14,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
 @RestController
+@RequestMapping("/api/v1")
 public class OrderController {
 
     private final OrderService orderService;
@@ -28,7 +30,7 @@ public class OrderController {
     }
 
     @PreAuthorize("isAuthenticated()")
-    @PostMapping("/api/orders")
+    @PostMapping("/orders")
     public ResponseEntity<ApiResponse<OrderResponse>> createOrder(@Valid @RequestBody OrderRequest request) {
         OrderResponse created = orderService.createOrder(request);
         ApiResponse<OrderResponse> response = ApiResponse.success("Order created successfully", created);
@@ -36,7 +38,7 @@ public class OrderController {
     }
 
     @PreAuthorize("isAuthenticated()")
-    @GetMapping("/api/orders/my")
+    @GetMapping("/orders/my")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getMyOrders() {
         List<OrderResponse> orders = orderService.getMyOrders();
         ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
@@ -44,7 +46,7 @@ public class OrderController {
     }
 
     @PreAuthorize("isAuthenticated()")
-    @GetMapping("/api/orders/{id}")
+    @GetMapping("/orders/{id}")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrderById(@PathVariable Long id) {
         OrderResponse order = orderService.getOrderById(id);
         ApiResponse<OrderResponse> response = ApiResponse.success("Order fetched successfully", order);
@@ -52,7 +54,7 @@ public class OrderController {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/api/users/{userId}/orders")
+    @GetMapping("/users/{userId}/orders")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getOrdersByUser(@PathVariable Long userId) {
         List<OrderResponse> orders = orderService.getOrdersByUser(userId);
         ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
@@ -60,7 +62,7 @@ public class OrderController {
     }
 
     @PreAuthorize("isAuthenticated()")
-    @PutMapping("/api/orders/{id}/cancel")
+    @PutMapping("/orders/{id}/cancel")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(@PathVariable Long id) {
         OrderResponse cancelled = orderService.cancelOrder(id);
         ApiResponse<OrderResponse> response = ApiResponse.success("Order cancelled successfully", cancelled);
@@ -68,7 +70,7 @@ public class OrderController {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/api/admin/orders")
+    @GetMapping("/admin/orders")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getAllOrdersAdmin() {
         List<OrderResponse> orders = orderService.getAllOrders();
         ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
@@ -76,7 +78,7 @@ public class OrderController {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
-    @PutMapping("/api/admin/orders/{id}/status")
+    @PutMapping("/admin/orders/{id}/status")
     public ResponseEntity<ApiResponse<OrderResponse>> updateOrderStatusAdmin(
             @PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
         OrderResponse updated = orderService.updateOrderStatus(id, request.getStatus());
@@ -85,7 +87,7 @@ public class OrderController {
     }
 
     @PreAuthorize("hasRole('DRIVER')")
-    @GetMapping("/api/driver/orders")
+    @GetMapping("/driver/orders")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getDriverOrders() {
         List<OrderResponse> orders = orderService.getAllOrders();
         ApiResponse<List<OrderResponse>> response = ApiResponse.success("Orders fetched successfully", orders);
@@ -93,7 +95,7 @@ public class OrderController {
     }
 
     @PreAuthorize("hasRole('DRIVER')")
-    @PutMapping("/api/driver/orders/{id}/status")
+    @PutMapping("/driver/orders/{id}/status")
     public ResponseEntity<ApiResponse<OrderResponse>> updateDriverOrderStatus(
             @PathVariable Long id, @Valid @RequestBody OrderStatusUpdateRequest request) {
         OrderResponse updated = orderService.updateOrderStatus(id, request.getStatus());

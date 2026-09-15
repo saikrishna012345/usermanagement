@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
+@RequestMapping("/api/v1")
 public class AddressController {
 
     private final AddressService addressService;
@@ -26,7 +27,7 @@ public class AddressController {
         this.addressService = addressService;
     }
 
-    @PostMapping("/api/users/{id}/addresses")
+    @PostMapping("/users/{id}/addresses")
     public ResponseEntity<ApiResponse<AddressResponse>> createAddress(
             @PathVariable Long id, @Valid @RequestBody AddressRequest request) {
         AddressResponse created = addressService.createAddress(id, request);
@@ -34,14 +35,14 @@ public class AddressController {
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
-    @GetMapping("/api/users/{id}/addresses")
+    @GetMapping("/users/{id}/addresses")
     public ResponseEntity<ApiResponse<List<AddressResponse>>> getAddresses(@PathVariable Long id) {
         List<AddressResponse> addresses = addressService.getAddresses(id);
         ApiResponse<List<AddressResponse>> response = ApiResponse.success("Addresses fetched successfully", addresses);
         return ResponseEntity.ok(response);
     }
 
-    @DeleteMapping("/api/addresses/{id}")
+    @DeleteMapping("/addresses/{id}")
     public ResponseEntity<Void> deleteAddress(@PathVariable Long id) {
         addressService.deleteAddress(id);
         return ResponseEntity.noContent().build();
