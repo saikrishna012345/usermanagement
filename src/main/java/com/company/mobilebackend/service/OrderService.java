@@ -18,6 +18,7 @@ import com.company.mobilebackend.security.SecurityUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.company.mobilebackend.service.NotificationService;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,12 +30,14 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
+    private final NotificationService notificationService;
 
     public OrderService(OrderRepository orderRepository, UserRepository userRepository,
-                        ProductRepository productRepository) {
+                        ProductRepository productRepository, NotificationService notificationService) {
         this.orderRepository = orderRepository;
         this.userRepository = userRepository;
         this.productRepository = productRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -65,6 +68,10 @@ public class OrderService {
 
         order.setTotalAmount(total);
         Order savedOrder = orderRepository.save(order);
+
+        notificationService.sendOrderConfirmation(savedOrder.getId(), user.getEmail());
+        notificationService.generateOrderConfirmationDocument(savedOrder.getId());
+
         return toResponse(savedOrder);
     }
 

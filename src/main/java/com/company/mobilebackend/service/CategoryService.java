@@ -9,6 +9,8 @@ import com.company.mobilebackend.model.Product;
 import com.company.mobilebackend.repository.CategoryRepository;
 import com.company.mobilebackend.repository.ProductRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,12 +26,14 @@ public class CategoryService {
         this.productRepository = productRepository;
     }
 
+    @CacheEvict(value = "categories", allEntries = true)
     public CategoryResponse createCategory(CategoryRequest request) {
         Category category = new Category(request.getName());
         Category saved = categoryRepository.save(category);
         return new CategoryResponse(saved.getId(), saved.getName());
     }
 
+    @Cacheable(value = "categories", key = "'all'")
     public List<CategoryResponse> getAllCategories() {
         return categoryRepository.findAll()
                 .stream()

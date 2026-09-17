@@ -11,6 +11,8 @@ import com.company.mobilebackend.repository.ProductRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,6 +29,7 @@ public class ProductService {
         this.categoryRepository = categoryRepository;
     }
 
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
     public ProductResponse createProduct(ProductRequest request) {
         Category category = categoryRepository.findById(request.getCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + request.getCategoryId()));
@@ -37,12 +40,14 @@ public class ProductService {
         return toResponse(saved);
     }
 
+    @Cacheable(value = "products", key = "#id")
     public ProductResponse getProductById(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
         return toResponse(product);
     }
 
+    @CacheEvict(value = {"products", "productsList"}, key = "#id", allEntries = true)
     public ProductResponse updateProduct(Long id, ProductRequest request) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
@@ -59,6 +64,7 @@ public class ProductService {
         return toResponse(updated);
     }
 
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
     public void deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
             throw new ResourceNotFoundException("Product not found with id: " + id);
@@ -73,6 +79,7 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
+    @Cacheable(value = "productsList", key = "'all'", condition = "#category == null && #minPrice == null && #maxPrice == null")
     public PagedResponse<ProductResponse> filterProducts(Long categoryId, BigDecimal minPrice,
                                                          BigDecimal maxPrice, Pageable pageable) {
         Page<Product> page = productRepository.filterProducts(categoryId, minPrice, maxPrice, pageable);
