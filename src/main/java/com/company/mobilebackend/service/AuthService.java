@@ -12,6 +12,8 @@ import com.company.mobilebackend.model.RefreshToken;
 import com.company.mobilebackend.model.User;
 import com.company.mobilebackend.repository.RefreshTokenRepository;
 import com.company.mobilebackend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ import java.util.UUID;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -39,10 +43,14 @@ public class AuthService {
     }
 
     public RegisterResponse register(RegisterRequest request) {
+        log.info("Registration attempt for email={}", request.getEmail());
+
         if (userRepository.existsByEmail(request.getEmail())) {
+            log.warn("Registration failed - duplicate email={}", request.getEmail());
             throw new DuplicateUserException("Email already registered: " + request.getEmail());
         }
         if (userRepository.existsByMobileNumber(request.getMobileNumber())) {
+            log.warn("Registration failed - duplicate mobile number for email={}", request.getEmail());
             throw new DuplicateUserException("Mobile number already registered: " + request.getMobileNumber());
         }
 
@@ -59,20 +67,30 @@ public class AuthService {
         );
 
         User saved = userRepository.save(user);
+        log.info("User registered successfully - userId={}, email={}", saved.getId(), saved.getEmail());
+
         return new RegisterResponse(saved.getId(), saved.getFirstName(), saved.getLastName(),
                 saved.getEmail(), saved.getRole());
     }
 
     public LoginResponse login(LoginRequest request) {
+        log.info("Login attempt for email={}", request.getEmail());
+
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> {
+                    log.warn("Login failed - no account for email={}", request.getEmail());
+                    return new InvalidCredentialsException("Invalid email or password");
+                });
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            log.warn("Login failed - incorrect password for email={}", request.getEmail());
             throw new InvalidCredentialsException("Invalid email or password");
         }
 
         String accessToken = jwtService.generateAccessToken(user.getEmail(), user.getRole());
         String refreshTokenValue = createAndStoreRefreshToken(user);
+
+        log.info("Login successful for email={}", request.getEmail());
 
         return new LoginResponse(user.getId(), user.getFirstName(), user.getLastName(),
                 user.getEmail(), user.getRole(), accessToken, refreshTokenValue);
