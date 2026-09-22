@@ -36,7 +36,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<TopCustomerResponse> findTopCustomers(Pageable pageable);
 
     @Query("SELECT new com.company.mobilebackend.dto.OrderStatisticsResponse(" +
-            "COUNT(o), COALESCE(SUM(o.totalAmount), 0), COALESCE(AVG(o.totalAmount), 0)) " +
+            "COUNT(o), COALESCE(SUM(o.totalAmount), 0), COALESCE(AVG(o.totalAmount), 0.0)) " +
             "FROM Order o")
     OrderStatisticsResponse getOrderStatistics();
 

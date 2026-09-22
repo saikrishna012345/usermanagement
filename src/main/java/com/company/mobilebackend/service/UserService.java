@@ -122,4 +122,29 @@ public class UserService {
                 user.getUpdatedAt()
         );
     }
+    public UserResponse getCurrentUser() {
+        String email = com.company.mobilebackend.security.SecurityUtils.getCurrentUserEmail();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+        return toResponse(user);
+    }
+
+    public UserResponse updateCurrentUser(UserRequest request) {
+        String email = com.company.mobilebackend.security.SecurityUtils.getCurrentUserEmail();
+        User existing = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        existing.setFirstName(request.getFirstName());
+        existing.setLastName(request.getLastName());
+        existing.setEmail(request.getEmail());
+        existing.setMobileNumber(request.getMobileNumber());
+        existing.setStatus(request.getStatus());
+
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            existing.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        }
+
+        User updated = userRepository.save(existing);
+        return toResponse(updated);
+    }
 }

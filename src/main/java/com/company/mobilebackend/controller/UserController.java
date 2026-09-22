@@ -77,4 +77,25 @@ public class UserController {
         ApiResponse<List<UserResponse>> response = ApiResponse.success("Users fetched successfully", users);
         return ResponseEntity.ok(response);
     }
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<UserResponse>> getCurrentUser() {
+        UserResponse user = userService.getCurrentUser();
+        ApiResponse<UserResponse> response = ApiResponse.success("Current user fetched successfully", user);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/me")
+    public ResponseEntity<ApiResponse<UserResponse>> updateCurrentUser(@Valid @RequestBody UserRequest request) {
+        UserResponse updated = userService.updateCurrentUser(request);
+        ApiResponse<UserResponse> response = ApiResponse.success("Profile updated successfully", updated);
+        return ResponseEntity.ok(response);
+    }
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/api/v1/admin/users")
+    public ResponseEntity<ApiResponse<PagedResponse<UserResponse>>> getAllUsersAdmin(
+            @PageableDefault(size = 10) Pageable pageable) {
+        return getAllUsers(pageable);
+    }
 }

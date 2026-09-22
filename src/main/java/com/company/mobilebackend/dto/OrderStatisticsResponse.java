@@ -5,9 +5,9 @@ import java.math.BigDecimal;
 public class OrderStatisticsResponse {
     private Long totalOrders;
     private BigDecimal totalRevenue;
-    private BigDecimal averageOrderValue;
+    private Double averageOrderValue;
 
-    public OrderStatisticsResponse(Long totalOrders, BigDecimal totalRevenue, BigDecimal averageOrderValue) {
+    public OrderStatisticsResponse(Long totalOrders, BigDecimal totalRevenue, Double averageOrderValue) {
         this.totalOrders = totalOrders;
         this.totalRevenue = totalRevenue;
         this.averageOrderValue = averageOrderValue;
@@ -15,5 +15,5 @@ public class OrderStatisticsResponse {
 
     public Long getTotalOrders() { return totalOrders; }
     public BigDecimal getTotalRevenue() { return totalRevenue; }
-    public BigDecimal getAverageOrderValue() { return averageOrderValue; }
+    public Double getAverageOrderValue() { return averageOrderValue; }
 }
