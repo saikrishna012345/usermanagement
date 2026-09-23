@@ -1,6 +1,6 @@
 # Mobile Commerce Backend — Microservices
 
-This project is the microservices phase of the existing Mobile Commerce Backend. It implements only the requirements for **21-Sep-2026, 22-Sep-2026 and 23-Sep-2026**.
+This project is the microservices phase of the existing Mobile Commerce Backend. It implements only the requirements.
 
 ## Included in this phase
 
@@ -174,7 +174,3 @@ Raw stack traces are not returned to the API client.
 - PostgreSQL
 - Maven
 - JUnit 5 / Mockito
-
-## Scope note
-
-This repository intentionally stops after the 23-Sep-2026 requirements. API Gateway, Eureka/service discovery implementation and gateway authentication enforcement are reserved for the 24-Sep-2026 task.
