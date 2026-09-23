@@ -1,0 +1,91 @@
+{
+  "info": {
+    "name": "Mobile Commerce Backend - Phase 2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "userId", "value": "1" },
+    { "key": "categoryId", "value": "1" },
+    { "key": "productId", "value": "1" },
+    { "key": "orderId", "value": "1" },
+    { "key": "addressId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Users",
+      "item": [
+        { "name": "Create User", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Sai\",\n  \"lastName\": \"Krishna\",\n  \"email\": \"sai@example.com\",\n  \"mobileNumber\": \"9876543210\",\n  \"password\": \"secret123\",\n  \"status\": \"ACTIVE\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] } } },
+        { "name": "Get All Users (paginated)", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users?page=0&size=10&sort=createdAt,desc", "host": ["{{baseUrl}}"], "path": ["api", "users"], "query": [{ "key": "page", "value": "0" }, { "key": "size", "value": "10" }, { "key": "sort", "value": "createdAt,desc" }] } } },
+        { "name": "Get User By Id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/{{userId}}", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}"] } } },
+        { "name": "Update User", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Sai\",\n  \"lastName\": \"Krishna\",\n  \"email\": \"sai.updated@example.com\",\n  \"mobileNumber\": \"9876543210\",\n  \"password\": \"secret123\",\n  \"status\": \"ACTIVE\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users/{{userId}}", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}"] } } },
+        { "name": "Delete User", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/users/{{userId}}", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}"] } } },
+        { "name": "Search Users", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/search?name=sai", "host": ["{{baseUrl}}"], "path": ["api", "users", "search"], "query": [{ "key": "name", "value": "sai" }] } } },
+        { "name": "[Negative] Create User - Empty Name", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"\",\n  \"lastName\": \"Krishna\",\n  \"email\": \"blank@example.com\",\n  \"mobileNumber\": \"9876543211\",\n  \"password\": \"secret123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] } } },
+        { "name": "[Negative] Create User - Invalid Email", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"not-an-email\",\n  \"mobileNumber\": \"9876543212\",\n  \"password\": \"secret123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] } } },
+        { "name": "[Negative] Create User - Weak Password", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\",\n  \"email\": \"weakpass@example.com\",\n  \"mobileNumber\": \"9876543213\",\n  \"password\": \"abc\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] } } },
+        { "name": "[Negative] Duplicate Email", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Dup\",\n  \"lastName\": \"Test\",\n  \"email\": \"sai@example.com\",\n  \"mobileNumber\": \"9876543299\",\n  \"password\": \"secret123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users", "host": ["{{baseUrl}}"], "path": ["api", "users"] } } },
+        { "name": "[Negative] Get User - Not Found", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/9999", "host": ["{{baseUrl}}"], "path": ["api", "users", "9999"] } } },
+        { "name": "[Negative] Update User - Not Found", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Ghost\",\n  \"lastName\": \"User\",\n  \"email\": \"ghost@example.com\",\n  \"mobileNumber\": \"9999999999\",\n  \"password\": \"secret123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users/9999", "host": ["{{baseUrl}}"], "path": ["api", "users", "9999"] } } },
+        { "name": "[Negative] Delete User - Not Found", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/users/9999", "host": ["{{baseUrl}}"], "path": ["api", "users", "9999"] } } }
+      ]
+    },
+    {
+      "name": "Profile & Address",
+      "item": [
+        { "name": "Create Profile", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"bio\": \"Java developer\",\n  \"profilePictureUrl\": \"\",\n  \"dateOfBirth\": \"1998-05-10\",\n  \"gender\": \"Male\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "profile"] } } },
+        { "name": "Get Profile", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "profile"] } } },
+        { "name": "Create Address", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"street\": \"123 Main St\",\n  \"city\": \"Hyderabad\",\n  \"state\": \"Telangana\",\n  \"postalCode\": \"500001\",\n  \"country\": \"India\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/addresses", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "addresses"] } } },
+        { "name": "Get Addresses", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/addresses", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "addresses"] } } },
+        { "name": "Delete Address", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/addresses/{{addressId}}", "host": ["{{baseUrl}}"], "path": ["api", "addresses", "{{addressId}}"] } } },
+        { "name": "[Negative] Create Address - Missing Fields", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"street\": \"\",\n  \"city\": \"\",\n  \"state\": \"\",\n  \"postalCode\": \"\",\n  \"country\": \"\"\n}" }, "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/addresses", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "addresses"] } } }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        { "name": "Create Category", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Electronics\"\n}" }, "url": { "raw": "{{baseUrl}}/api/categories", "host": ["{{baseUrl}}"], "path": ["api", "categories"] } } },
+        { "name": "Get All Categories", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/categories", "host": ["{{baseUrl}}"], "path": ["api", "categories"] } } },
+        { "name": "Get Products By Category", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/categories/{{categoryId}}/products", "host": ["{{baseUrl}}"], "path": ["api", "categories", "{{categoryId}}", "products"] } } },
+        { "name": "[Negative] Create Category - Empty Name", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"\"\n}" }, "url": { "raw": "{{baseUrl}}/api/categories", "host": ["{{baseUrl}}"], "path": ["api", "categories"] } } }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        { "name": "Create Product", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Phone\",\n  \"description\": \"A smartphone\",\n  \"price\": 500,\n  \"stockQuantity\": 10,\n  \"categoryId\": {{categoryId}}\n}" }, "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] } } },
+        { "name": "Get Products (filter + paginate + sort)", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/products?category={{categoryId}}&minPrice=100&maxPrice=5000&page=0&size=10&sort=price,asc", "host": ["{{baseUrl}}"], "path": ["api", "products"], "query": [{ "key": "category", "value": "{{categoryId}}" }, { "key": "minPrice", "value": "100" }, { "key": "maxPrice", "value": "5000" }, { "key": "page", "value": "0" }, { "key": "size", "value": "10" }, { "key": "sort", "value": "price,asc" }] } } },
+        { "name": "Get Product By Id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] } } },
+        { "name": "Update Product", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Phone Pro\",\n  \"description\": \"An upgraded smartphone\",\n  \"price\": 600,\n  \"stockQuantity\": 8,\n  \"categoryId\": {{categoryId}}\n}" }, "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] } } },
+        { "name": "Delete Product", "request": { "method": "DELETE", "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] } } },
+        { "name": "Search Products", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/products/search?name=phone", "host": ["{{baseUrl}}"], "path": ["api", "products", "search"], "query": [{ "key": "name", "value": "phone" }] } } },
+        { "name": "[Negative] Create Product - Price Zero", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Bad Product\",\n  \"description\": \"invalid\",\n  \"price\": 0,\n  \"stockQuantity\": 5,\n  \"categoryId\": {{categoryId}}\n}" }, "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] } } },
+        { "name": "[Negative] Create Product - Invalid Category", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Orphan Product\",\n  \"description\": \"invalid category\",\n  \"price\": 100,\n  \"stockQuantity\": 5,\n  \"categoryId\": 9999\n}" }, "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] } } },
+        { "name": "[Negative] Get Product - Not Found", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/products/9999", "host": ["{{baseUrl}}"], "path": ["api", "products", "9999"] } } }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        { "name": "Create Order", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"items\": [\n    { \"productId\": {{productId}}, \"quantity\": 2 }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] } } },
+        { "name": "Get Order By Id", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}"] } } },
+        { "name": "Get Orders By User", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/users/{{userId}}/orders", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{userId}}", "orders"] } } },
+        { "name": "Cancel Order", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "cancel"] } } },
+        { "name": "[Negative] Create Order - Insufficient Stock (rollback test)", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"items\": [\n    { \"productId\": {{productId}}, \"quantity\": 999 }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] } } },
+        { "name": "[Negative] Create Order - Invalid Product", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"items\": [\n    { \"productId\": 9999, \"quantity\": 1 }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] } } },
+        { "name": "[Negative] Create Order - Invalid User", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": 9999,\n  \"items\": [\n    { \"productId\": {{productId}}, \"quantity\": 1 }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] } } },
+        { "name": "[Negative] Create Order - Invalid Quantity (zero)", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": {{userId}},\n  \"items\": [\n    { \"productId\": {{productId}}, \"quantity\": 0 }\n  ]\n}" }, "url": { "raw": "{{baseUrl}}/api/orders", "host": ["{{baseUrl}}"], "path": ["api", "orders"] } } },
+        { "name": "[Negative] Cancel Order - Already Cancelled", "request": { "method": "PUT", "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "cancel"] } } },
+        { "name": "[Negative] Get Order - Not Found", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/orders/9999", "host": ["{{baseUrl}}"], "path": ["api", "orders", "9999"] } } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        { "name": "Login - Valid", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"sai@example.com\",\n  \"password\": \"secret123\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } } },
+        { "name": "[Negative] Login - Wrong Password", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"sai@example.com\",\n  \"password\": \"wrongpassword\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } } },
+        { "name": "[Negative] Login - Unknown Email", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"unknown@example.com\",\n  \"password\": \"anything\"\n}" }, "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] } } }
+      ]
+    }
+  ]
+}
