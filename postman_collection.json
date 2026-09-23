@@ -1,0 +1,27 @@
+{
+  "info": {
+    "name": "Mobile Backend Microservices",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key":"userUrl","value":"http://localhost:8081"},
+    {"key":"productUrl","value":"http://localhost:8082"},
+    {"key":"orderUrl","value":"http://localhost:8083"}
+  ],
+  "item": [
+    {"name":"User Service","item":[
+      {"name":"Create User","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"firstName\": \"Sai\",\n  \"lastName\": \"Krishna\",\n  \"email\": \"sai@example.com\",\n  \"mobileNumber\": \"9999999999\",\n  \"password\": \"Password123\",\n  \"role\": \"USER\",\n  \"status\": \"ACTIVE\"\n}"},"url":{"raw":"{{userUrl}}/api/users","host":["{{userUrl}}"],"path":["api","users"]}}},
+      {"name":"Get User","request":{"method":"GET","url":{"raw":"{{userUrl}}/api/users/1","host":["{{userUrl}}"],"path":["api","users","1"]}}}
+    ]},
+    {"name":"Product Service","item":[
+      {"name":"Get Categories","request":{"method":"GET","url":{"raw":"{{productUrl}}/api/products/categories","host":["{{productUrl}}"],"path":["api","products","categories"]}}},
+      {"name":"Create Product","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"name\": \"Phone\",\n  \"description\": \"Demo product\",\n  \"price\": 499.99,\n  \"stockQuantity\": 10,\n  \"categoryId\": 1\n}"},"url":{"raw":"{{productUrl}}/api/products","host":["{{productUrl}}"],"path":["api","products"]}}},
+      {"name":"Get Product","request":{"method":"GET","url":{"raw":"{{productUrl}}/api/products/1","host":["{{productUrl}}"],"path":["api","products","1"]}}}
+    ]},
+    {"name":"Order Service","item":[
+      {"name":"Create Order - demonstrates OpenFeign","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"userId\": 1,\n  \"items\": [\n    {\"productId\": 1, \"quantity\": 2}\n  ]\n}"},"url":{"raw":"{{orderUrl}}/api/orders","host":["{{orderUrl}}"],"path":["api","orders"]}}},
+      {"name":"Get Order","request":{"method":"GET","url":{"raw":"{{orderUrl}}/api/orders/1","host":["{{orderUrl}}"],"path":["api","orders","1"]}}},
+      {"name":"Invalid Product - expected 404","request":{"method":"POST","header":[{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"userId\": 1,\n  \"items\": [{\"productId\": 999999, \"quantity\": 1}]\n}"},"url":{"raw":"{{orderUrl}}/api/orders","host":["{{orderUrl}}"],"path":["api","orders"]}}}
+    ]}
+  ]
+}
