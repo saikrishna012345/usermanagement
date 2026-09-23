@@ -22,8 +22,6 @@ This project is the microservices phase of the existing Mobile Commerce Backend.
 | Product Service | 8082 | product_db | Products, categories, inventory |
 | Order Service | 8083 | order_db | Orders and order items |
 
-The API Gateway and service discovery are intentionally **not implemented in this phase**; they belong to the 24-Sep task. Authentication/gateway flow is documented as an architecture concept, not implemented as a gateway in this phase.
-
 ## Architecture
 
 ```text
