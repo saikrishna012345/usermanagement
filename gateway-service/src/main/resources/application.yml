@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/users/**,/api/v1/health
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/api/v1/products/**,/api/v1/categories/**
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/v1/orders/**,/api/v1/admin/orders/**,/api/v1/users/*/orders,/api/v1/driver/orders/**
+      discovery:
+        locator:
+          enabled: false
+server:
+  port: 8080
+app:
+  jwt:
+    secret: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
