@@ -83,6 +83,7 @@ public class ProductController {
         ApiResponse<List<ProductResponse>> response = ApiResponse.success("Products fetched successfully", products);
         return ResponseEntity.ok(response);
     }
+
     @PatchMapping("/{id}/stock")
     @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public ResponseEntity<ApiResponse<ProductResponse>> updateStock(@PathVariable Long id, @RequestParam Integer quantity) {

@@ -1,12 +1,90 @@
 package com.company.mobilebackend.service;
-import com.company.mobilebackend.client.ProductClient; import com.company.mobilebackend.dto.*; import com.company.mobilebackend.exception.BusinessException; import com.company.mobilebackend.exception.ResourceNotFoundException; import com.company.mobilebackend.model.*; import com.company.mobilebackend.repository.OrderRepository; import org.springframework.stereotype.Service; import org.springframework.transaction.annotation.Transactional; import java.math.BigDecimal; import java.util.List; import java.util.stream.Collectors;
-@Service public class OrderService { private final OrderRepository orderRepository; private final ProductClient productClient; public OrderService(OrderRepository r,ProductClient c){orderRepository=r;productClient=c;}
- @Transactional public OrderResponse createOrder(OrderRequest request){ Order order=new Order(request.getUserId(),OrderStatus.PENDING,BigDecimal.ZERO); BigDecimal total=BigDecimal.ZERO; for(OrderItemRequest ir:request.getItems()){ ProductClient.ProductResponse p; try{p=productClient.getProduct(ir.getProductId());}catch(feign.FeignException.NotFound e){throw new ResourceNotFoundException("Product not found with id: "+ir.getProductId());}catch(feign.FeignException e){throw new BusinessException("Product Service unavailable");} if(p==null)throw new ResourceNotFoundException("Product not found with id: "+ir.getProductId()); if(p.stockQuantity()<ir.getQuantity())throw new BusinessException("Insufficient stock for product: "+p.name()); try{productClient.decreaseStock(ir.getProductId(),ir.getQuantity());}catch(feign.FeignException e){throw new BusinessException("Product stock update failed");} OrderItem oi=new OrderItem(p.id(),p.name(),ir.getQuantity(),p.price()); order.addOrderItem(oi); total=total.add(p.price().multiply(BigDecimal.valueOf(ir.getQuantity())));} order.setTotalAmount(total); return toResponse(orderRepository.save(order)); }
- public OrderResponse getOrderById(Long id){return toResponse(orderRepository.findById(id).orElseThrow(()->new ResourceNotFoundException("Order not found with id: "+id)));}
- public List<OrderResponse> getMyOrders(){String email=org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName(); return orderRepository.findAll().stream().filter(o->true).map(this::toResponse).collect(Collectors.toList());}
- public List<OrderResponse> getOrdersByUser(Long userId){return orderRepository.findByUserId(userId).stream().map(this::toResponse).collect(Collectors.toList());}
- @Transactional public OrderResponse cancelOrder(Long id){Order o=orderRepository.findById(id).orElseThrow(()->new ResourceNotFoundException("Order not found with id: "+id)); if(o.getStatus()==OrderStatus.CANCELLED)throw new BusinessException("Order is already cancelled"); o.setStatus(OrderStatus.CANCELLED); return toResponse(orderRepository.save(o));}
- public OrderResponse updateOrderStatus(Long id,OrderStatus s){Order o=orderRepository.findById(id).orElseThrow(()->new ResourceNotFoundException("Order not found with id: "+id));o.setStatus(s);return toResponse(orderRepository.save(o));}
- public List<OrderResponse> getAllOrders(){return orderRepository.findAll().stream().map(this::toResponse).collect(Collectors.toList());}
- private OrderResponse toResponse(Order o){List<OrderItemResponse> items=o.getOrderItems().stream().map(i->new OrderItemResponse(i.getProductId(),i.getProductName(),i.getQuantity(),i.getUnitPrice(),i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))).collect(Collectors.toList()); return new OrderResponse(o.getId(),o.getUserId(),o.getStatus(),o.getTotalAmount(),o.getCreatedAt(),items);}
+
+import com.company.mobilebackend.client.ProductClient;
+import com.company.mobilebackend.dto.*;
+import com.company.mobilebackend.exception.BusinessException;
+import com.company.mobilebackend.exception.ResourceNotFoundException;
+import com.company.mobilebackend.model.*;
+import com.company.mobilebackend.repository.OrderRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class OrderService {
+    private final OrderRepository orderRepository;
+    private final ProductClient productClient;
+
+    public OrderService(OrderRepository r, ProductClient c) {
+        orderRepository = r;
+        productClient = c;
+    }
+
+    @Transactional
+    public OrderResponse createOrder(OrderRequest request) {
+        Order order = new Order(request.getUserId(), OrderStatus.PENDING, BigDecimal.ZERO);
+        BigDecimal total = BigDecimal.ZERO;
+        for (OrderItemRequest ir : request.getItems()) {
+            ProductClient.ProductResponse p;
+            try {
+                p = productClient.getProduct(ir.getProductId());
+            } catch (feign.FeignException.NotFound e) {
+                throw new ResourceNotFoundException("Product not found with id: " + ir.getProductId());
+            } catch (feign.FeignException e) {
+                throw new BusinessException("Product Service unavailable");
+            }
+            if (p == null) throw new ResourceNotFoundException("Product not found with id: " + ir.getProductId());
+            if (p.stockQuantity() < ir.getQuantity())
+                throw new BusinessException("Insufficient stock for product: " + p.name());
+            try {
+                productClient.decreaseStock(ir.getProductId(), ir.getQuantity());
+            } catch (feign.FeignException e) {
+                throw new BusinessException("Product stock update failed");
+            }
+            OrderItem oi = new OrderItem(p.id(), p.name(), ir.getQuantity(), p.price());
+            order.addOrderItem(oi);
+            total = total.add(p.price().multiply(BigDecimal.valueOf(ir.getQuantity())));
+        }
+        order.setTotalAmount(total);
+        return toResponse(orderRepository.save(order));
+    }
+
+    public OrderResponse getOrderById(Long id) {
+        return toResponse(orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id)));
+    }
+
+    public List<OrderResponse> getMyOrders() {
+        String email = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
+        return orderRepository.findAll().stream().filter(o -> true).map(this::toResponse).collect(Collectors.toList());
+    }
+
+    public List<OrderResponse> getOrdersByUser(Long userId) {
+        return orderRepository.findByUserId(userId).stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(Long id) {
+        Order o = orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+        if (o.getStatus() == OrderStatus.CANCELLED) throw new BusinessException("Order is already cancelled");
+        o.setStatus(OrderStatus.CANCELLED);
+        return toResponse(orderRepository.save(o));
+    }
+
+    public OrderResponse updateOrderStatus(Long id, OrderStatus s) {
+        Order o = orderRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + id));
+        o.setStatus(s);
+        return toResponse(orderRepository.save(o));
+    }
+
+    public List<OrderResponse> getAllOrders() {
+        return orderRepository.findAll().stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    private OrderResponse toResponse(Order o) {
+        List<OrderItemResponse> items = o.getOrderItems().stream().map(i -> new OrderItemResponse(i.getProductId(), i.getProductName(), i.getQuantity(), i.getUnitPrice(), i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))).collect(Collectors.toList());
+        return new OrderResponse(o.getId(), o.getUserId(), o.getStatus(), o.getTotalAmount(), o.getCreatedAt(), items);
+    }
 }
