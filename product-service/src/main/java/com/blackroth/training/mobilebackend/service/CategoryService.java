@@ -1,0 +1,58 @@
+package com.blackroth.training.mobilebackend.service;
+
+import com.blackroth.training.mobilebackend.dto.CategoryRequest;
+import com.blackroth.training.mobilebackend.dto.CategoryResponse;
+import com.blackroth.training.mobilebackend.dto.ProductResponse;
+import com.blackroth.training.mobilebackend.exception.ResourceNotFoundException;
+import com.blackroth.training.mobilebackend.model.Category;
+import com.blackroth.training.mobilebackend.model.Product;
+import com.blackroth.training.mobilebackend.repository.CategoryRepository;
+import com.blackroth.training.mobilebackend.repository.ProductRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class CategoryService {
+
+    private final CategoryRepository categoryRepository;
+    private final ProductRepository productRepository;
+
+    public CategoryService(CategoryRepository categoryRepository, ProductRepository productRepository) {
+        this.categoryRepository = categoryRepository;
+        this.productRepository = productRepository;
+    }
+
+    @CacheEvict(value = "categories", allEntries = true)
+    public CategoryResponse createCategory(CategoryRequest request) {
+        Category category = new Category(request.getName());
+        Category saved = categoryRepository.save(category);
+        return new CategoryResponse(saved.getId(), saved.getName());
+    }
+
+    @Cacheable(value = "categories", key = "'all'")
+    public List<CategoryResponse> getAllCategories() {
+        return categoryRepository.findAll()
+                .stream()
+                .map(c -> new CategoryResponse(c.getId(), c.getName()))
+                .collect(Collectors.toList());
+    }
+
+    public List<ProductResponse> getProductsByCategory(Long categoryId) {
+        if (!categoryRepository.existsById(categoryId)) {
+            throw new ResourceNotFoundException("Category not found with id: " + categoryId);
+        }
+        return productRepository.findByCategoryId(categoryId, org.springframework.data.domain.Pageable.unpaged())
+                .stream()
+                .map(this::toProductResponse)
+                .collect(Collectors.toList());
+    }
+
+    private ProductResponse toProductResponse(Product p) {
+        return new ProductResponse(p.getId(), p.getName(), p.getDescription(),
+                p.getPrice(), p.getStockQuantity(), p.getCategory().getName());
+    }
+}
