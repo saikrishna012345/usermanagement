@@ -6,7 +6,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
-
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import java.util.Map;
 import java.util.*;
 
 @RestControllerAdvice
@@ -45,6 +47,21 @@ public class GlobalExceptionHandler {
         return build("Something went wrong. Please try again later.", "INTERNAL_SERVER_ERROR", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(ProductServiceUnavailableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleProductServiceUnavailable(
+            ProductServiceUnavailableException ex) {
+
+        ApiResponse<Object> response = ApiResponse.error(
+                ex.getMessage(),
+                "PRODUCT_SERVICE_UNAVAILABLE",
+                HttpStatus.SERVICE_UNAVAILABLE.value()
+        );
+
+        return new ResponseEntity<>(
+                response,
+                HttpStatus.SERVICE_UNAVAILABLE
+        );
+    }
     private ResponseEntity<ApiResponse<Object>> build(String m, String c, HttpStatus s) {
         return new ResponseEntity<>(ApiResponse.error(m, c, s.value()), s);
     }
