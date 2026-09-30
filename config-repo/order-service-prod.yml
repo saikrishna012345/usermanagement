@@ -1,0 +1,74 @@
+server:
+  port: ${ORDER_SERVICE_PORT:8083}
+
+spring:
+  application:
+    name: order-service
+
+  datasource:
+    url: ${ORDER_DB_URL}
+    username: ${ORDER_DB_USERNAME}
+    password: ${ORDER_DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+
+      client:
+        config:
+          default:
+            connectTimeout: ${FEIGN_CONNECT_TIMEOUT:2000}
+            readTimeout: ${FEIGN_READ_TIMEOUT:3000}
+
+          product-service:
+            connectTimeout: ${PRODUCT_CONNECT_TIMEOUT:2000}
+            readTimeout: ${PRODUCT_READ_TIMEOUT:3000}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL}
+
+  instance:
+    prefer-ip-address: true
+
+resilience4j:
+
+  circuitbreaker:
+    instances:
+      productService:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+
+  retry:
+    instances:
+      productService:
+        maxAttempts: 3
+        waitDuration: 500ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO
+    com.blackroth.training: INFO
