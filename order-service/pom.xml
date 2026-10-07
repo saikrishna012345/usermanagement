@@ -58,6 +58,11 @@
             <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
         <!-- Resilience4j Spring Boot integration -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>

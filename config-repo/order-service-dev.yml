@@ -35,7 +35,7 @@ spring:
 
 app:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: ${APP_JWT_SECRET}
 
 eureka:
   client:

@@ -119,7 +119,11 @@ services:
       USER_DB_URL: jdbc:postgresql://postgres-user:5432/user_db
       USER_DB_USERNAME: postgres
       USER_DB_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-user:5432/user_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       - config-server
       - eureka-server
@@ -146,7 +150,12 @@ services:
       PRODUCT_DB_URL: jdbc:postgresql://postgres-product:5432/product_db
       PRODUCT_DB_USERNAME: postgres
       PRODUCT_DB_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-product:5432/product_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
     depends_on:
       - config-server
       - eureka-server
@@ -174,7 +183,7 @@ services:
       ORDER_DB_USERNAME: postgres
       ORDER_DB_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
-      JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+      APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
     depends_on:
       - config-server
       - eureka-server
