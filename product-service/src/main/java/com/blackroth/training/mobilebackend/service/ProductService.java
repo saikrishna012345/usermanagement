@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -42,14 +43,18 @@ public class ProductService {
         return toResponse(saved);
     }
 
-    @Cacheable(value = "products", key = "#id")
+    @Cacheable(value = "products", key = "#p0")
     public ProductResponse getProductById(Long id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
+        Product product = productRepository.findByIdWithCategory(id);
+
+        if (product == null) {
+            throw new ResourceNotFoundException("Product not found with id: " + id);
+        }
+
         return toResponse(product);
     }
 
-    @CacheEvict(value = {"products", "productsList"}, key = "#id", allEntries = true)
+    @CacheEvict(value = {"products", "productsList"}, key = "#p0", allEntries = true)
     public ProductResponse updateProduct(Long id, ProductRequest request) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
@@ -82,6 +87,7 @@ public class ProductService {
     }
 
     @Cacheable(value = "productsList", key = "'all'", condition = "#category == null && #minPrice == null && #maxPrice == null")
+    @Transactional(readOnly = true)
     public PagedResponse<ProductResponse> filterProducts(Long categoryId, BigDecimal minPrice,
                                                          BigDecimal maxPrice, Pageable pageable) {
         Page<Product> page = productRepository.filterProducts(categoryId, minPrice, maxPrice, pageable);
