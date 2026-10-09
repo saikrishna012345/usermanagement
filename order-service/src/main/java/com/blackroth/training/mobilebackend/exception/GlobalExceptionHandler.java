@@ -44,7 +44,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> generic(Exception e) {
-        return build("Something went wrong. Please try again later.", "INTERNAL_SERVER_ERROR", HttpStatus.INTERNAL_SERVER_ERROR);
+
+        e.printStackTrace();
+
+        return build(
+                "Something went wrong. Please try again later.",
+                "INTERNAL_SERVER_ERROR",
+                HttpStatus.INTERNAL_SERVER_ERROR
+        );
     }
 
     @ExceptionHandler(ProductServiceUnavailableException.class)

@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 
@@ -35,8 +36,17 @@ public class OrderController {
 
     @GetMapping("/my")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<List<OrderResponse>>> my(@RequestHeader("X-User-Id") Long userId) {
-        return ResponseEntity.ok(ApiResponse.success("Orders fetched successfully", service.getOrdersByUser(userId)));
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> my() {
+        Long userId = (Long) SecurityContextHolder.getContext()
+                .getAuthentication()
+                .getPrincipal();
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Orders fetched successfully",
+                        service.getOrdersByUser(userId)
+                )
+        );
     }
 
     @PutMapping("/{id}/cancel")

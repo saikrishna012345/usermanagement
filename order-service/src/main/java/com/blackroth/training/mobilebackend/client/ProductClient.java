@@ -1,3 +1,4 @@
+
 package com.blackroth.training.mobilebackend.client;
 
 import com.blackroth.training.mobilebackend.config.FeignConfig;
@@ -17,13 +18,23 @@ import java.math.BigDecimal;
 public interface ProductClient {
 
     @GetMapping("/api/v1/products/{id}")
-    ProductResponse getProduct(@PathVariable("id") Long id);
+    ProductApiResponse getProduct(@PathVariable("id") Long id);
 
     @PatchMapping("/api/v1/products/{id}/stock")
-    ProductResponse decreaseStock(
+    ProductApiResponse decreaseStock(
             @PathVariable("id") Long id,
             @RequestParam("quantity") Integer quantity
     );
+
+    record ProductApiResponse(
+            boolean success,
+            Integer status,
+            String message,
+            ProductResponse data,
+            String errorCode,
+            String timestamp
+    ) {
+    }
 
     record ProductResponse(
             Long id,

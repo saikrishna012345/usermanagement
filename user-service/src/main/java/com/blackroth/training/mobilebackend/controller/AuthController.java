@@ -35,6 +35,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest request) {
+        System.out.println("LOGIN CONTROLLER REACHED: " + request.getEmail());
         LoginResponse loginResponse = authService.login(request);
         ApiResponse<LoginResponse> response = ApiResponse.success("Login successful", loginResponse);
         return ResponseEntity.ok(response);

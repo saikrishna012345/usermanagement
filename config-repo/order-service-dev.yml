@@ -40,7 +40,7 @@ app:
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_URL:http://eureka-server:8761/eureka/}
 
   instance:
     prefer-ip-address: true
@@ -75,7 +75,10 @@ management:
     health:
       show-details: always
 
+
 logging:
   level:
     root: INFO
     com.blackroth.training: DEBUG
+    com.blackroth.training.mobilebackend.client.ProductClient: DEBUG
+    feign: DEBUG

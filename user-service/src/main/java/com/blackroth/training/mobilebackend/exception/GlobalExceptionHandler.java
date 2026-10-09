@@ -81,6 +81,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Object>> handleMalformedJson(HttpMessageNotReadableException ex) {
+        ex.printStackTrace();
         return build("Malformed request body or invalid field value", "INVALID_REQUEST", HttpStatus.BAD_REQUEST);
     }
 

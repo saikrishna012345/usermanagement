@@ -3,3 +3,8 @@ target/
 *.iml
 .DS_Store
 *.log
+
+# Local test data and generated files
+/login.json
+/order-request.json
+/BOOT-INF/

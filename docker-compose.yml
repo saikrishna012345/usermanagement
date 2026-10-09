@@ -164,6 +164,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
     depends_on:
       - config-server
       - eureka-server
@@ -223,6 +224,7 @@ services:
       ORDER_DB_USERNAME: postgres
       ORDER_DB_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
     depends_on:
       - config-server
