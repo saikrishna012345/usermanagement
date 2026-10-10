@@ -55,4 +55,12 @@ public class KafkaConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic orderCancelledTopic() {
+        return TopicBuilder.name("order.cancelled")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
 }
