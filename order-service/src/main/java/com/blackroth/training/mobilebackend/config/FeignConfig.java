@@ -1,3 +1,4 @@
+
 package com.blackroth.training.mobilebackend.config;
 
 import feign.RequestInterceptor;
@@ -15,38 +16,26 @@ public class FeignConfig {
 
     @Bean
     public RequestInterceptor requestForwardingInterceptor() {
-
         return template -> {
-
             ServletRequestAttributes attributes =
-                    (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+                    (ServletRequestAttributes)
+                            RequestContextHolder.getRequestAttributes();
 
             if (attributes != null) {
-
                 HttpServletRequest request = attributes.getRequest();
 
-                // Forward Authorization header
-                String authorization =
-                        request.getHeader("Authorization");
-
+                String authorization = request.getHeader("Authorization");
                 if (authorization != null && !authorization.isBlank()) {
                     template.header("Authorization", authorization);
                 }
 
-                // Forward Correlation ID
-                String correlationId =
-                        MDC.get("correlationId");
-
+                String correlationId = MDC.get("correlationId");
                 if (correlationId == null || correlationId.isBlank()) {
-                    correlationId =
-                            request.getHeader(CORRELATION_ID);
+                    correlationId = request.getHeader(CORRELATION_ID);
                 }
 
                 if (correlationId != null && !correlationId.isBlank()) {
-                    template.header(
-                            CORRELATION_ID,
-                            correlationId
-                    );
+                    template.header(CORRELATION_ID, correlationId);
                 }
             }
         };

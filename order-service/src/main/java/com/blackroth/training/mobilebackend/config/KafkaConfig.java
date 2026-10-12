@@ -13,6 +13,10 @@ import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.JsonSerializer;
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -63,4 +67,40 @@ public class KafkaConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic orderCreatedDltTopic() {
+        return TopicBuilder.name("order.created.dlt")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic orderCancelledDltTopic() {
+        return TopicBuilder.name("order.cancelled.dlt")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public DefaultErrorHandler kafkaErrorHandler(
+            KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate) {
+
+        DeadLetterPublishingRecoverer recoverer =
+                new DeadLetterPublishingRecoverer(
+                        kafkaTemplate,
+                        (record, exception) -> new TopicPartition(
+                                record.topic() + ".dlt",
+                                record.partition()
+                        )
+                );
+
+        return new DefaultErrorHandler(
+                recoverer,
+                new FixedBackOff(2000L, 3L)
+        );
+    }
+
 }

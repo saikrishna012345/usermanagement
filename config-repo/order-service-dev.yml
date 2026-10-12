@@ -1,79 +1,83 @@
-  server:
-    port: 8083
 
-  spring:
-    application:
-      name: order-service
+server:
+  port: 8083
 
-    datasource:
-      url: ${ORDER_DB_URL:jdbc:postgresql://localhost:5432/order_db}
-      username: ${ORDER_DB_USERNAME:postgres}
-      password: ${ORDER_DB_PASSWORD}
+spring:
+  application:
+    name: order-service
 
-    jpa:
+  datasource:
+    url: ${ORDER_DB_URL:jdbc:postgresql://localhost:5432/order_db}
+    username: ${ORDER_DB_USERNAME:postgres}
+    password: ${ORDER_DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
       hibernate:
-        ddl-auto: update
-      open-in-view: false
-      properties:
-        hibernate:
-          format_sql: true
+        format_sql: true
 
-    cloud:
-      openfeign:
-        circuitbreaker:
+  cloud:
+    openfeign:
+      httpclient:
+        hc5:
           enabled: true
-        client:
-          config:
-            default:
-              connectTimeout: 2000
-              readTimeout: 3000
-            product-service:
-              loggerLevel: FULL
-              connectTimeout: 2000
-              readTimeout: 3000
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          default:
+            connectTimeout: 2000
+            readTimeout: 3000
+          product-service:
+            loggerLevel: basic
+            connectTimeout: 2000
+            readTimeout: 3000
 
-  app:
-    jwt:
-      secret: ${APP_JWT_SECRET}
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
 
-  eureka:
-    client:
-      service-url:
-        defaultZone: ${EUREKA_URL:http://eureka-server:8761/eureka/}
-    instance:
-      prefer-ip-address: true
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://eureka-server:8761/eureka/}
+  instance:
+    prefer-ip-address: true
 
-  resilience4j:
-    circuitbreaker:
-      instances:
-        productService:
-          registerHealthIndicator: true
-          slidingWindowType: COUNT_BASED
-          slidingWindowSize: 10
-          minimumNumberOfCalls: 5
-          failureRateThreshold: 50
-          waitDurationInOpenState: 10s
-          permittedNumberOfCallsInHalfOpenState: 2
-          automaticTransitionFromOpenToHalfOpenEnabled: true
+resilience4j:
+  circuitbreaker:
+    instances:
+      productService:
+        registerHealthIndicator: true
+        slidingWindowType: COUNT_BASED
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 2
+        automaticTransitionFromOpenToHalfOpenEnabled: true
 
-    retry:
-      instances:
-        productService:
-          maxAttempts: 3
-          waitDuration: 500ms
+  retry:
+    instances:
+      productService:
+        maxAttempts: 3
+        waitDuration: 500ms
 
-  management:
-    endpoints:
-      web:
-        exposure:
-          include: health,info
-    endpoint:
-      health:
-        show-details: always
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
 
-  logging:
-    level:
-      root: INFO
-      com.blackroth.training: DEBUG
-      com.blackroth.training.mobilebackend.client.ProductClient: DEBUG
-      feign: DEBUG
+logging:
+  level:
+    root: INFO
+    com.blackroth.training: DEBUG
+    com.blackroth.training.mobilebackend.client.ProductClient: DEBUG
+    feign: DEBUG
