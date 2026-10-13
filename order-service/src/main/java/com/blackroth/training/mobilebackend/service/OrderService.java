@@ -22,6 +22,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.blackroth.training.mobilebackend.service.OrderStateService;
+import com.blackroth.training.mobilebackend.service.PaymentAuthorizationService;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,20 +41,27 @@ public class OrderService {
     private final ProductClient productClient;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final OrderStateService orderStateService;
+    private final PaymentAuthorizationService paymentAuthorizationService;
 
     public OrderService(
             OrderRepository orderRepository,
             ProductClient productClient,
             OutboxEventRepository outboxEventRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            OrderStateService orderStateService,
+            PaymentAuthorizationService paymentAuthorizationService
     ) {
         this.orderRepository = orderRepository;
         this.productClient = productClient;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.orderStateService = orderStateService;
+        this.paymentAuthorizationService = paymentAuthorizationService;
     }
 
-    @Transactional
+
+
     public OrderResponse createOrder(OrderRequest request) {
 
         Authentication authentication = SecurityContextHolder
@@ -60,154 +69,162 @@ public class OrderService {
                 .getAuthentication();
 
         if (authentication == null
-                || authentication.getPrincipal() == null) {
-            throw new BusinessException("Authenticated user not found");
-        }
-
-        Object principal = authentication.getPrincipal();
-
-        if (!(principal instanceof Long userId)) {
-            throw new BusinessException(
-                    "Authenticated user ID must be a Long"
-            );
+                || authentication.getPrincipal() == null
+                || !(authentication.getPrincipal() instanceof Long userId)) {
+            throw new BusinessException("Authenticated user ID must be a Long");
         }
 
         if (request == null
                 || request.getItems() == null
                 || request.getItems().isEmpty()) {
-            throw new BusinessException(
-                    "An order must contain at least one item"
-            );
+            throw new BusinessException("An order must contain at least one item");
         }
 
-        Order order = new Order(
-                userId,
-                OrderStatus.PENDING,
-                BigDecimal.ZERO
-        );
-
+        Order order = new Order(userId, OrderStatus.PENDING, BigDecimal.ZERO);
         BigDecimal total = BigDecimal.ZERO;
+        java.util.Set<Long> productIds = new java.util.HashSet<>();
 
+        // Validate items and build the order without changing remote inventory.
         for (OrderItemRequest itemRequest : request.getItems()) {
-
-            if (itemRequest == null
-                    || itemRequest.getProductId() == null) {
-                throw new BusinessException(
-                        "Product ID is required"
-                );
+            if (itemRequest == null || itemRequest.getProductId() == null) {
+                throw new BusinessException("Product ID is required");
             }
 
             if (itemRequest.getQuantity() == null
                     || itemRequest.getQuantity() <= 0) {
+                throw new BusinessException("Order quantity must be greater than zero");
+            }
+
+            if (!productIds.add(itemRequest.getProductId())) {
                 throw new BusinessException(
-                        "Order quantity must be greater than zero"
-                );
+                        "Duplicate product IDs are not allowed in one order");
             }
 
             ProductClient.ProductResponse product;
-
             try {
                 ProductClient.ProductApiResponse response =
-                        productClient.getProduct(
-                                itemRequest.getProductId()
-                        );
+                        productClient.getProduct(itemRequest.getProductId());
 
-                if (response == null || !response.success()) {
-                    throw new BusinessException(
-                            "Unable to retrieve product details"
-                    );
+                if (response == null || !response.success() || response.data() == null) {
+                    throw new BusinessException("Unable to retrieve product details");
                 }
-
                 product = response.data();
-
             } catch (FeignException.NotFound exception) {
                 throw new ResourceNotFoundException(
-                        "Product not found with id: "
-                                + itemRequest.getProductId()
-                );
+                        "Product not found with id: " + itemRequest.getProductId());
             } catch (FeignException exception) {
-                throw new BusinessException(
-                        "Product Service unavailable"
-                );
+                throw new BusinessException("Product Service unavailable");
             }
 
-            if (product == null) {
-                throw new ResourceNotFoundException(
-                        "Product not found with id: "
-                                + itemRequest.getProductId()
-                );
-            }
-
-            if (product.price() == null
-                    || product.stockQuantity() == null) {
+            if (product.price() == null || product.stockQuantity() == null) {
                 throw new BusinessException(
-                        "Product price or stock information is unavailable"
-                );
+                        "Product price or stock information is unavailable");
             }
 
             if (product.price().signum() < 0) {
-                throw new BusinessException(
-                        "Product price cannot be negative"
-                );
+                throw new BusinessException("Product price cannot be negative");
             }
 
             if (product.stockQuantity() < itemRequest.getQuantity()) {
                 throw new BusinessException(
-                        "Insufficient stock for product: "
-                                + product.name()
-                );
+                        "Insufficient stock for product: " + product.name());
             }
 
-            try {
-                ProductClient.ProductApiResponse stockResponse =
-                        productClient.decreaseStock(
-                                itemRequest.getProductId(),
-                                itemRequest.getQuantity()
-                        );
-
-                if (stockResponse == null
-                        || !stockResponse.success()) {
-                    throw new BusinessException(
-                            "Product stock update failed"
-                    );
-                }
-
-            } catch (FeignException exception) {
-                throw new BusinessException(
-                        "Product stock update failed"
-                );
-            }
-
-            OrderItem orderItem = new OrderItem(
+            order.addOrderItem(new OrderItem(
                     product.id(),
                     product.name(),
                     itemRequest.getQuantity(),
-                    product.price()
-            );
+                    product.price()));
 
-            order.addOrderItem(orderItem);
-
-            BigDecimal itemTotal = product.price().multiply(
-                    BigDecimal.valueOf(itemRequest.getQuantity())
-            );
-
-            total = total.add(itemTotal);
+            total = total.add(product.price().multiply(
+                    BigDecimal.valueOf(itemRequest.getQuantity())));
         }
 
         order.setTotalAmount(total);
 
-        // Save the order first so its generated ID is available.
-        Order savedOrder = orderRepository.saveAndFlush(order);
+        // Save PENDING in its own transaction to generate the order ID.
+        Order savedOrder = orderStateService.savePendingOrder(order);
+        java.util.List<OrderItem> reservedItems = new java.util.ArrayList<>();
 
-        // Store the event in the same database transaction.
-        saveOutboxEvent(
-                savedOrder,
-                "ORDER_CREATED",
-                ORDER_CREATED_TOPIC
-        );
+        try {
+            // Reserve inventory for each item using the generated order ID.
+            for (OrderItem item : savedOrder.getOrderItems()) {
+                ProductClient.ProductApiResponse reservation =
+                        productClient.reserveStock(
+                                item.getProductId(),
+                                savedOrder.getId(),
+                                item.getQuantity());
 
-        return toResponse(savedOrder);
+                if (reservation == null || !reservation.success()) {
+                    throw new BusinessException(
+                            "Inventory reservation failed for product: "
+                                    + item.getProductId());
+                }
+
+                reservedItems.add(item);
+            }
+
+            // Simulated payment authorization; it can be configured to fail.
+            paymentAuthorizationService.authorize(savedOrder.getId());
+
+            // Commit each inventory reservation after payment authorization.
+            for (OrderItem item : reservedItems) {
+                ProductClient.ProductApiResponse commitResponse =
+                        productClient.commitReservation(
+                                item.getProductId(), savedOrder.getId());
+
+                if (commitResponse == null || !commitResponse.success()) {
+                    throw new BusinessException(
+                            "Inventory commit failed for product: "
+                                    + item.getProductId());
+                }
+            }
+
+            Order confirmedOrder =
+                    orderStateService.markConfirmed(savedOrder.getId());
+
+            saveOutboxEvent(
+                    confirmedOrder, "ORDER_CREATED", ORDER_CREATED_TOPIC);
+
+            return toResponse(confirmedOrder);
+
+        } catch (Exception failure) {
+            boolean compensationSucceeded = true;
+
+            // Release every reservation known to have succeeded.
+            for (OrderItem item : reservedItems) {
+                try {
+                    ProductClient.ProductApiResponse release =
+                            productClient.releaseReservation(
+                                    item.getProductId(), savedOrder.getId());
+
+                    if (release == null || !release.success()) {
+                        compensationSucceeded = false;
+                    }
+                } catch (Exception compensationFailure) {
+                    compensationSucceeded = false;
+                }
+            }
+
+            if (compensationSucceeded) {
+                Order cancelledOrder =
+                        orderStateService.markCancelled(savedOrder.getId());
+
+                saveOutboxEvent(
+                        cancelledOrder, "ORDER_CANCELLED", ORDER_CANCELLED_TOPIC);
+            } else {
+                orderStateService.markCompensationPending(savedOrder.getId());
+            }
+
+            throw new BusinessException(
+                    "Order Saga failed for order " + savedOrder.getId()
+                            + (compensationSucceeded
+                            ? "; inventory compensation completed"
+                            : "; compensation is pending and requires recovery"));
+        }
     }
+
+
 
     @Transactional(readOnly = true)
     public OrderResponse getOrderById(Long id) {

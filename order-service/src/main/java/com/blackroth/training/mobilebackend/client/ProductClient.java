@@ -26,6 +26,32 @@ public interface ProductClient {
             @RequestParam("quantity") Integer quantity
     );
 
+    @PatchMapping("/api/v1/products/{id}/stock/release")
+    ProductApiResponse releaseStock(
+            @PathVariable("id") Long id,
+            @RequestParam("quantity") Integer quantity
+    );
+
+    @org.springframework.web.bind.annotation.PostMapping(
+            "/api/v1/products/{id}/reservations")
+    ProductApiResponse reserveStock(
+            @PathVariable("id") Long id,
+            @RequestParam("orderId") Long orderId,
+            @RequestParam("quantity") Integer quantity
+    );
+
+    @PatchMapping("/api/v1/products/{id}/reservations/release")
+    ProductApiResponse releaseReservation(
+            @PathVariable("id") Long id,
+            @RequestParam("orderId") Long orderId
+    );
+
+    @PatchMapping("/api/v1/products/{id}/reservations/commit")
+    ProductApiResponse commitReservation(
+            @PathVariable("id") Long id,
+            @RequestParam("orderId") Long orderId
+    );
+
     record ProductApiResponse(
             boolean success,
             Integer status,

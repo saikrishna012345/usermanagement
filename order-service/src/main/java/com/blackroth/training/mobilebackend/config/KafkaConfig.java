@@ -17,6 +17,8 @@ import org.apache.kafka.common.TopicPartition;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.util.backoff.FixedBackOff;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.ConsumerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -101,6 +103,21 @@ public class KafkaConfig {
                 recoverer,
                 new FixedBackOff(2000L, 3L)
         );
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, OrderCreatedEvent>
+    kafkaListenerContainerFactory(
+            ConsumerFactory<String, OrderCreatedEvent> consumerFactory,
+            DefaultErrorHandler kafkaErrorHandler) {
+
+        ConcurrentKafkaListenerContainerFactory<String, OrderCreatedEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
+
+        return factory;
     }
 
 }

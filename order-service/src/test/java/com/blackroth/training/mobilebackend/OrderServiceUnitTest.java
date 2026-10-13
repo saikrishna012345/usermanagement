@@ -13,7 +13,21 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-
+import com.blackroth.training.mobilebackend.service.OrderStateService;
+import com.blackroth.training.mobilebackend.service.PaymentAuthorizationService;
+import com.blackroth.training.mobilebackend.model.Order;
+import com.blackroth.training.mobilebackend.model.OrderStatus;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import com.blackroth.training.mobilebackend.dto.OrderResponse;
+import java.lang.reflect.Field;
+import org.mockito.Mockito;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -31,6 +45,12 @@ class OrderServiceUnitTest {
     @Test
     void rejectsWhenProductStockIsInsufficient() {
 
+        OrderStateService orderStateService =
+                mock(OrderStateService.class);
+
+        PaymentAuthorizationService paymentAuthorizationService =
+                mock(PaymentAuthorizationService.class);
+
         OrderRepository orderRepository =
                 mock(OrderRepository.class);
 
@@ -40,7 +60,8 @@ class OrderServiceUnitTest {
         OutboxEventRepository outboxRepository =
                 mock(OutboxEventRepository.class);
 
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule());
 
         ProductClient.ProductResponse product =
                 new ProductClient.ProductResponse(
@@ -69,7 +90,9 @@ class OrderServiceUnitTest {
                 orderRepository,
                 productClient,
                 outboxRepository,
-                objectMapper
+                objectMapper,
+                orderStateService,
+                paymentAuthorizationService
         );
 
         SecurityContextHolder.getContext().setAuthentication(
@@ -92,5 +115,91 @@ class OrderServiceUnitTest {
                 BusinessException.class,
                 () -> service.createOrder(request)
         );
+    }
+
+    @Test
+    void cancelsOrderAndReleasesInventoryWhenPaymentFails() throws Exception {
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        PaymentAuthorizationService paymentService =
+                mock(PaymentAuthorizationService.class);
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        ProductClient productClient = mock(ProductClient.class);
+        OutboxEventRepository outboxRepository =
+                mock(OutboxEventRepository.class);
+
+        ObjectMapper objectMapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule());
+
+        ProductClient.ProductResponse product =
+                new ProductClient.ProductResponse(
+                        1L, "Phone", "", BigDecimal.TEN, 10, "Electronics");
+
+        ProductClient.ProductApiResponse productResponse =
+                new ProductClient.ProductApiResponse(
+                        true, 200, "Success", product, null, null);
+
+        ProductClient.ProductApiResponse reservationResponse =
+                new ProductClient.ProductApiResponse(
+                        true, 200, "Reserved", product, null, null);
+
+        ProductClient.ProductApiResponse releaseResponse =
+                new ProductClient.ProductApiResponse(
+                        true, 200, "Released", product, null, null);
+
+        when(productClient.getProduct(1L)).thenReturn(productResponse);
+        when(productClient.reserveStock(anyLong(), anyLong(), anyInt()))
+                .thenReturn(reservationResponse);
+        when(productClient.releaseReservation(anyLong(), anyLong()))
+                .thenReturn(releaseResponse);
+
+        Order pendingOrder = new Order();
+        Field idField = Order.class.getDeclaredField("id");
+        idField.setAccessible(true);
+        idField.set(pendingOrder, 100L);
+
+        when(orderStateService.savePendingOrder(any(Order.class)))
+                .thenAnswer(invocation -> {
+                    Order order = invocation.getArgument(0);
+                    idField.set(order, 100L);
+                    return order;
+                });
+
+        when(orderStateService.markCancelled(100L))
+                .thenReturn(pendingOrder);
+
+        doThrow(new BusinessException("Simulated payment failure"))
+                .when(paymentService).authorize(100L);
+
+        OrderService service = new OrderService(
+                orderRepository,
+                productClient,
+                outboxRepository,
+                objectMapper,
+                orderStateService,
+                paymentService
+        );
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        1L, null, List.of()));
+
+        OrderItemRequest item = new OrderItemRequest();
+        item.setProductId(1L);
+        item.setQuantity(1);
+
+        OrderRequest request = new OrderRequest();
+        request.setItems(List.of(item));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> service.createOrder(request)
+        );
+
+        System.out.println("Saga test failure: " + exception.getMessage());
+
+        verify(productClient).reserveStock(1L, 100L, 1);
+        verify(paymentService).authorize(100L);
+        verify(productClient).releaseReservation(1L, 100L);
+        verify(orderStateService).markCancelled(100L);
     }
 }

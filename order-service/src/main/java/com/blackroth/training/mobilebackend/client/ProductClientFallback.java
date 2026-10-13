@@ -23,4 +23,46 @@ public class ProductClientFallback implements ProductClient {
                 "Product service is temporarily unavailable"
         );
     }
+
+    @Override
+    public ProductClient.ProductApiResponse releaseStock(
+            Long id,
+            Integer quantity
+    ) {
+        throw new ProductServiceUnavailableException(
+                "Product service is temporarily unavailable"
+        );
+    }
+
+    @Override
+    public ProductClient.ProductApiResponse reserveStock(
+            Long id,
+            Long orderId,
+            Integer quantity
+    ) {
+        throw new ProductServiceUnavailableException(
+                "Product service is temporarily unavailable"
+        );
+    }
+
+    @Override
+    public ProductClient.ProductApiResponse releaseReservation(
+            Long id,
+            Long orderId
+    ) {
+        throw new ProductServiceUnavailableException(
+                "Product service is temporarily unavailable"
+        );
+    }
+
+    @Override
+    public ProductClient.ProductApiResponse commitReservation(
+            Long id,
+            Long orderId
+    ) {
+        throw new ProductServiceUnavailableException(
+                "Product service is temporarily unavailable"
+        );
+    }
+
 }

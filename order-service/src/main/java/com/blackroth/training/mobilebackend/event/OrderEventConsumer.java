@@ -3,7 +3,6 @@ package com.blackroth.training.mobilebackend.event;
 
 import com.blackroth.training.mobilebackend.model.ProcessedEvent;
 import com.blackroth.training.mobilebackend.repository.ProcessedEventRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,23 +35,16 @@ public class OrderEventConsumer {
             return;
         }
 
-        try {
-            processedEventRepository.saveAndFlush(
-                    new ProcessedEvent(
-                            event.eventId(),
-                            event.eventType()
-                    )
-            );
+        processedEventRepository.saveAndFlush(
+                new ProcessedEvent(
+                        event.eventId(),
+                        event.eventType()
+                )
+        );
 
-            System.out.println(
-                    "Processed order event: " + event.eventId()
-                            + ", type: " + event.eventType()
-            );
-        } catch (DataIntegrityViolationException exception) {
-            System.out.println(
-                    "Duplicate event rejected by database: "
-                            + event.eventId()
-            );
-        }
+        System.out.println(
+                "Processed order event: " + event.eventId()
+                        + ", type: " + event.eventType()
+        );
     }
 }

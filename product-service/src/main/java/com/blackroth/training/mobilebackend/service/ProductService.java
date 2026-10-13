@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.transaction.annotation.Transactional;
+import com.blackroth.training.mobilebackend.model.InventoryReservation;
+import com.blackroth.training.mobilebackend.repository.InventoryReservationRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,10 +28,15 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final InventoryReservationRepository reservationRepository;
 
-    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository) {
+    public ProductService(
+            ProductRepository productRepository,
+            CategoryRepository categoryRepository,
+            InventoryReservationRepository reservationRepository) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
+        this.reservationRepository = reservationRepository;
     }
 
     @CacheEvict(value = {"products", "productsList"}, allEntries = true)
@@ -96,6 +103,109 @@ public class ProductService {
                 page.getTotalElements(), page.getTotalPages(), page.isLast());
     }
 
+    @Transactional
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
+    public ProductResponse reserveStock(
+            Long orderId,
+            Long productId,
+            Integer quantity) {
+
+        if (orderId == null || orderId < 1
+                || quantity == null || quantity < 1) {
+            throw new InvalidRequestException(
+                    "Valid order ID and quantity are required");
+        }
+
+        InventoryReservation existingReservation =
+                reservationRepository
+                        .findByOrderIdAndProductId(orderId, productId)
+                        .orElse(null);
+
+        if (existingReservation != null) {
+            if (existingReservation.getQuantity().equals(quantity)
+                    && existingReservation.getStatus()
+                    == InventoryReservation.Status.RESERVED) {
+                return getProductById(productId);
+            }
+
+            throw new BusinessException(
+                    "A reservation already exists with a different state or quantity");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Product not found with id: " + productId));
+
+        if (product.getStockQuantity() < quantity) {
+            throw new BusinessException(
+                    "Insufficient stock for product: " + product.getName());
+        }
+
+        product.setStockQuantity(product.getStockQuantity() - quantity);
+        Product updated = productRepository.saveAndFlush(product);
+
+        reservationRepository.saveAndFlush(
+                new InventoryReservation(orderId, productId, quantity));
+
+        return toResponse(updated);
+    }
+
+    @Transactional
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
+    public ProductResponse releaseReservation(
+            Long orderId,
+            Long productId) {
+
+        InventoryReservation reservation =
+                reservationRepository.findForUpdate(orderId, productId)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Reservation not found for order: " + orderId));
+
+        if (reservation.getStatus() == InventoryReservation.Status.RELEASED) {
+            return getProductById(productId);
+        }
+
+        if (reservation.getStatus() != InventoryReservation.Status.RESERVED) {
+            throw new BusinessException(
+                    "Only reserved inventory can be released");
+        }
+
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Product not found with id: " + productId));
+
+        product.setStockQuantity(
+                product.getStockQuantity() + reservation.getQuantity());
+
+        reservation.setStatus(InventoryReservation.Status.RELEASED);
+
+        Product updated = productRepository.save(product);
+        reservationRepository.save(reservation);
+
+        return toResponse(updated);
+    }
+
+    @Transactional
+    public void commitReservation(Long orderId, Long productId) {
+        InventoryReservation reservation =
+                reservationRepository.findForUpdate(orderId, productId)
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Reservation not found for order: " + orderId));
+
+        if (reservation.getStatus() == InventoryReservation.Status.COMMITTED) {
+            return;
+        }
+
+        if (reservation.getStatus() != InventoryReservation.Status.RESERVED) {
+            throw new BusinessException(
+                    "Only reserved inventory can be committed");
+        }
+
+        reservation.setStatus(InventoryReservation.Status.COMMITTED);
+        reservationRepository.save(reservation);
+    }
+
+
     @org.springframework.transaction.annotation.Transactional
     public ProductResponse decreaseStock(Long id, Integer quantity) {
         Product product = productRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
@@ -105,8 +215,30 @@ public class ProductService {
         return toResponse(productRepository.save(product));
     }
 
+    @org.springframework.transaction.annotation.Transactional
+    public ProductResponse increaseStock(Long id, Integer quantity) {
+        if (quantity == null || quantity < 1) {
+            throw new InvalidRequestException(
+                    "quantity must be at least 1"
+            );
+        }
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Product not found with id: " + id
+                ));
+
+        product.setStockQuantity(
+                product.getStockQuantity() + quantity
+        );
+
+        return toResponse(productRepository.save(product));
+    }
+
     private ProductResponse toResponse(Product p) {
         return new ProductResponse(p.getId(), p.getName(), p.getDescription(),
                 p.getPrice(), p.getStockQuantity(), p.getCategory().getName());
     }
+
+
 }

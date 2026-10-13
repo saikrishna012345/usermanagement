@@ -148,4 +148,60 @@ public class ProductController {
                 )
         );
     }
+
+    @PostMapping("/{id}/reservations")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ProductResponse>> reserveStock(
+            @PathVariable("id") Long productId,
+            @RequestParam(name = "orderId") Long orderId,
+            @RequestParam(name = "quantity") Integer quantity) {
+
+        ProductResponse updated = productService.reserveStock(
+                orderId, productId, quantity);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Inventory reserved successfully", updated));
+    }
+
+    @PatchMapping("/{id}/reservations/release")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ProductResponse>> releaseReservation(
+            @PathVariable("id") Long productId,
+            @RequestParam(name = "orderId") Long orderId) {
+
+        ProductResponse updated = productService.releaseReservation(
+                orderId, productId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Inventory reservation released", updated));
+    }
+
+    @PatchMapping("/{id}/reservations/commit")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> commitReservation(
+            @PathVariable("id") Long productId,
+            @RequestParam(name = "orderId") Long orderId) {
+
+        productService.commitReservation(orderId, productId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Inventory reservation committed", null));
+    }
+
+    @PatchMapping("/{id}/stock/release")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<ProductResponse>> releaseStock(
+            @PathVariable("id") Long id,
+            @RequestParam(name = "quantity") Integer quantity) {
+
+        ProductResponse updated =
+                productService.increaseStock(id, quantity);
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Stock released successfully",
+                        updated
+                )
+        );
+    }
 }
