@@ -34,6 +34,7 @@ import java.util.stream.Collectors;
 @Service
 public class OrderService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderService.class);
     private static final String ORDER_CREATED_TOPIC = "order.created";
     private static final String ORDER_CANCELLED_TOPIC = "order.cancelled";
 
@@ -183,12 +184,10 @@ public class OrderService {
             Order confirmedOrder =
                     orderStateService.markConfirmed(savedOrder.getId());
 
-            saveOutboxEvent(
-                    confirmedOrder, "ORDER_CREATED", ORDER_CREATED_TOPIC);
-
             return toResponse(confirmedOrder);
 
         } catch (Exception failure) {
+            log.error("Order Saga failed for order {}", savedOrder.getId(), failure);
             boolean compensationSucceeded = true;
 
             // Release every reservation known to have succeeded.
@@ -202,16 +201,14 @@ public class OrderService {
                         compensationSucceeded = false;
                     }
                 } catch (Exception compensationFailure) {
+                    log.error("Compensation release failure for order {} item {}",
+                            savedOrder.getId(), item.getProductId(), compensationFailure);
                     compensationSucceeded = false;
                 }
             }
 
             if (compensationSucceeded) {
-                Order cancelledOrder =
-                        orderStateService.markCancelled(savedOrder.getId());
-
-                saveOutboxEvent(
-                        cancelledOrder, "ORDER_CANCELLED", ORDER_CANCELLED_TOPIC);
+                orderStateService.markCancelled(savedOrder.getId());
             } else {
                 orderStateService.markCompensationPending(savedOrder.getId());
             }
@@ -270,15 +267,7 @@ public class OrderService {
             );
         }
 
-        order.setStatus(OrderStatus.CANCELLED);
-
-        Order cancelledOrder = orderRepository.saveAndFlush(order);
-
-        saveOutboxEvent(
-                cancelledOrder,
-                "ORDER_CANCELLED",
-                ORDER_CANCELLED_TOPIC
-        );
+        Order cancelledOrder = orderStateService.markCancelled(id);
 
         return toResponse(cancelledOrder);
     }

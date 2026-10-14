@@ -10,5 +10,6 @@ class OrderServiceArchitectureTest {
     @Test
     void orderServiceDoesNotContainProductRepository() {
         assertFalse(Files.exists(Paths.get("src/main/java/com/company/mobilebackend/repository/ProductRepository.java")));
+        assertFalse(Files.exists(Paths.get("src/main/java/com/blackroth/training/mobilebackend/repository/ProductRepository.java")));
     }
 }
