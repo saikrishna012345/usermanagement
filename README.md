@@ -21,9 +21,11 @@ This repository is the microservices implementation of the Mobile Commerce Backe
 ## Required order
 For order creation, Product Service must be registered/running because Order Service calls it through OpenFeign.
 
-## Verification
+## Verification & Integration Testing
+- Detailed testing guide, event schemas, Saga flows, and integration verification checklist are documented in [INTEGRATION_TESTING_GUIDE.md](file:///INTEGRATION_TESTING_GUIDE.md).
 - `GET /api/v1/users/{id}` through Gateway
 - `GET /api/v1/products/{id}` through Gateway
 - `POST /api/v1/orders` through Gateway
 - Stop Product Service and repeat order creation to verify controlled downstream failure.
 - Send an expired/invalid JWT to a protected endpoint to verify Gateway authentication.
+- Full reactor test suite: `mvn clean verify`

@@ -93,7 +93,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
     @PreAuthorize("hasRole('ADMIN')")
-    @GetMapping("/api/v1/admin/users")
+    @GetMapping("/admin")
     public ResponseEntity<ApiResponse<PagedResponse<UserResponse>>> getAllUsersAdmin(
             @PageableDefault(size = 10) Pageable pageable) {
         return getAllUsers(pageable);

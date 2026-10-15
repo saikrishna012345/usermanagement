@@ -186,6 +186,7 @@ services:
       - "8082:8082"
     environment:
       SPRING_APPLICATION_NAME: product-service
+      SERVER_PORT: 8082
       SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
       SPRING_PROFILES_ACTIVE: dev
       PRODUCT_DB_URL: jdbc:postgresql://postgres-product:5432/product_db
@@ -218,14 +219,20 @@ services:
       - "8083:8083"
     environment:
       SPRING_APPLICATION_NAME: order-service
+      SERVER_PORT: 8083
       SPRING_CONFIG_IMPORT: optional:configserver:http://config-server:8888
       SPRING_PROFILES_ACTIVE: dev
       ORDER_DB_URL: jdbc:postgresql://postgres-order:5432/order_db
       ORDER_DB_USERNAME: postgres
       ORDER_DB_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-order:5432/order_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
       EUREKA_URL: http://eureka-server:8761/eureka/
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+      SAGA_PAYMENT_SIMULATE_FAILURE: "false"
     depends_on:
       - config-server
       - eureka-server

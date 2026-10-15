@@ -25,23 +25,53 @@ public class JwtGatewayFilter implements WebFilter {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    private boolean publicPath(String p) {
-        return p.startsWith("/api/v1/auth/") || p.equals("/api/v1/health") || p.startsWith("/actuator") || p.startsWith("/swagger") || p.startsWith("/v3/api-docs");
+    private boolean isPublic(org.springframework.http.HttpMethod method, String path) {
+        if (path.startsWith("/api/v1/auth/") || path.equals("/api/v1/health")
+                || path.startsWith("/actuator") || path.startsWith("/swagger")
+                || path.startsWith("/v3/api-docs")) {
+            return true;
+        }
+        if (org.springframework.http.HttpMethod.GET.equals(method)) {
+            return path.startsWith("/api/v1/products") || path.startsWith("/api/v1/categories");
+        }
+        return false;
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, org.springframework.web.server.WebFilterChain chain) {
         String path = exchange.getRequest().getURI().getPath();
-        if (publicPath(path)) return chain.filter(exchange);
+        org.springframework.http.HttpMethod method = exchange.getRequest().getMethod();
         String h = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (h == null || !h.startsWith("Bearer "))
+
+        if (isPublic(method, path) && (h == null || !h.startsWith("Bearer "))) {
+            return chain.filter(exchange);
+        }
+
+        if (h == null || !h.startsWith("Bearer ")) {
             return reject(exchange, HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
+        }
+
         try {
             Claims c = Jwts.parser().verifyWith(key()).build().parseSignedClaims(h.substring(7)).getPayload();
-            if (c.getExpiration().before(new Date())) return reject(exchange, HttpStatus.UNAUTHORIZED, "Token expired");
-            ServerWebExchange mutated = exchange.mutate().request(exchange.getRequest().mutate().header("X-User-Email", c.getSubject()).header("X-User-Role", c.get("role", String.class)).header("X-User-Id", String.valueOf(c.get("userId", Long.class))).build()).build();
+            if (c.getExpiration().before(new Date())) {
+                return reject(exchange, HttpStatus.UNAUTHORIZED, "Token expired");
+            }
+            Object userIdObj = c.get("userId");
+            String userIdStr = userIdObj != null ? String.valueOf(userIdObj) : "";
+            String role = c.get("role", String.class);
+
+            ServerWebExchange mutated = exchange.mutate()
+                    .request(exchange.getRequest().mutate()
+                            .header("X-User-Email", c.getSubject() != null ? c.getSubject() : "")
+                            .header("X-User-Role", role != null ? role : "")
+                            .header("X-User-Id", userIdStr)
+                            .build())
+                    .build();
             return chain.filter(mutated);
         } catch (Exception e) {
+            if (isPublic(method, path)) {
+                return chain.filter(exchange);
+            }
             return reject(exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired token");
         }
     }

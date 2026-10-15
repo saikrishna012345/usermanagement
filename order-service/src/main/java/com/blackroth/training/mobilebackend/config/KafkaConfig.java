@@ -99,10 +99,16 @@ public class KafkaConfig {
                         )
                 );
 
-        return new DefaultErrorHandler(
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(
                 recoverer,
                 new FixedBackOff(2000L, 3L)
         );
+        errorHandler.addNotRetryableExceptions(
+                IllegalArgumentException.class,
+                org.springframework.messaging.converter.MessageConversionException.class,
+                org.springframework.kafka.support.serializer.DeserializationException.class
+        );
+        return errorHandler;
     }
 
     @Bean

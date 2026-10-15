@@ -22,7 +22,7 @@ public class Order {
     private BigDecimal totalAmount;
     @Column(updatable = false)
     private LocalDateTime createdAt;
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<OrderItem> orderItems = new ArrayList<>();
 
     public Order() {

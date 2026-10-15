@@ -33,13 +33,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (h != null && h.startsWith("Bearer ")) try {
             Claims c = Jwts.parser().verifyWith(key()).build().parseSignedClaims(h.substring(7)).getPayload();
             String role = c.get("role", String.class);
-            Long userId = c.get("userId", Long.class);
+            Object rawUserId = c.get("userId");
+            Long userId = null;
+            if (rawUserId instanceof Number num) {
+                userId = num.longValue();
+            } else if (rawUserId != null) {
+                try {
+                    userId = Long.valueOf(rawUserId.toString());
+                } catch (NumberFormatException ignored) {}
+            }
 
-            var auth = new UsernamePasswordAuthenticationToken(
-                    userId,
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
-            );            SecurityContextHolder.getContext().setAuthentication(auth);
+            if (userId != null) {
+                var auth = new UsernamePasswordAuthenticationToken(
+                        userId,
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + (role != null ? role : "USER")))
+                );
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            }
         } catch (Exception ignored) {
         }
         chain.doFilter(req, res);
