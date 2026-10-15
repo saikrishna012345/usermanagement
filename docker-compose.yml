@@ -232,6 +232,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+      SAGA_PAYMENT_SIMULATE_FAILURE: "false"
     depends_on:
       - config-server
       - eureka-server
