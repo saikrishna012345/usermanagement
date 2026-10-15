@@ -25,4 +25,22 @@ public record OrderCreatedEvent(
     ) {
         this(eventId, eventType, "1.0", occurredAt, null, orderId, userId, totalAmount);
     }
+
+    public void validate() {
+        if (eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("eventId is required and cannot be blank");
+        }
+        if (eventType == null || eventType.isBlank()) {
+            throw new IllegalArgumentException("eventType is required and cannot be blank");
+        }
+        if (schemaVersion == null || schemaVersion.isBlank()) {
+            throw new IllegalArgumentException("schemaVersion is required and cannot be blank");
+        }
+        if (occurredAt == null) {
+            throw new IllegalArgumentException("occurredAt is required");
+        }
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("orderId must be a positive number");
+        }
+    }
 }

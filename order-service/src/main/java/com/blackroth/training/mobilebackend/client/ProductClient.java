@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @FeignClient(
         name = "product-service",
         configuration = FeignConfig.class,
-        fallback = ProductClientFallback.class
+        fallbackFactory = ProductClientFallbackFactory.class
 )
 public interface ProductClient {
 

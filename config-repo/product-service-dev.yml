@@ -30,13 +30,14 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
-
+        include: health,info,metrics
   endpoint:
     health:
       show-details: always
 
 logging:
+  pattern:
+    console: "%clr(%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}){faint} %clr(%5p) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr([corr=%X{correlationId:-}]){yellow} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n%wEx"
   level:
     root: INFO
     com.blackroth.training: DEBUG

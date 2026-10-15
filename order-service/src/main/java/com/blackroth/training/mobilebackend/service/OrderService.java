@@ -190,8 +190,9 @@ public class OrderService {
             log.error("Order Saga failed for order {}", savedOrder.getId(), failure);
             boolean compensationSucceeded = true;
 
-            // Release every reservation known to have succeeded.
-            for (OrderItem item : reservedItems) {
+            // Release every order item because a timed-out reservation
+            // request may have committed in Product Service.
+            for (OrderItem item : savedOrder.getOrderItems()) {
                 try {
                     ProductClient.ProductApiResponse release =
                             productClient.releaseReservation(
@@ -200,9 +201,17 @@ public class OrderService {
                     if (release == null || !release.success()) {
                         compensationSucceeded = false;
                     }
+                } catch (ResourceNotFoundException notFound) {
+                    log.info(
+                            "No reservation found for order {} item {}, release not required",
+                            savedOrder.getId(),
+                            item.getProductId());
                 } catch (Exception compensationFailure) {
-                    log.error("Compensation release failure for order {} item {}",
-                            savedOrder.getId(), item.getProductId(), compensationFailure);
+                    log.error(
+                            "Compensation release failure for order {} item {}",
+                            savedOrder.getId(),
+                            item.getProductId(),
+                            compensationFailure);
                     compensationSucceeded = false;
                 }
             }

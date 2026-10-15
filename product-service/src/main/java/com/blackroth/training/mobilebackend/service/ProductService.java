@@ -206,6 +206,7 @@ public class ProductService {
     }
 
 
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
     @org.springframework.transaction.annotation.Transactional
     public ProductResponse decreaseStock(Long id, Integer quantity) {
         Product product = productRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Product not found with id: " + id));
@@ -215,6 +216,7 @@ public class ProductService {
         return toResponse(productRepository.save(product));
     }
 
+    @CacheEvict(value = {"products", "productsList"}, allEntries = true)
     @org.springframework.transaction.annotation.Transactional
     public ProductResponse increaseStock(Long id, Integer quantity) {
         if (quantity == null || quantity < 1) {
