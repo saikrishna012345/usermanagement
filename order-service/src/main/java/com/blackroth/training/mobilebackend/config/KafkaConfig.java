@@ -45,6 +45,10 @@ public class KafkaConfig {
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                 JsonSerializer.class
         );
+        config.put(
+                ProducerConfig.INTERCEPTOR_CLASSES_CONFIG,
+                CorrelationIdProducerInterceptor.class.getName()
+        );
 
         return new DefaultKafkaProducerFactory<>(config);
     }

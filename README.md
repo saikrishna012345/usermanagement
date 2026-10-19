@@ -40,4 +40,10 @@ For order creation, Product Service must be registered/running because Order Ser
   - Dead-letter topics with suffix `.dlt` (e.g. `order.created.dlt`).
 - **Transaction Guarantee:** Local PostgreSQL ACID transaction inserts into `orders` and `outbox_events` atomically; background `OutboxEventPublisher` delivers at-least-once to Kafka with exponential backoff on broker failure.
 - **Consumer Deduplication:** Consumers enforce idempotency by recording and checking `eventId` in `processed_events`.
-- **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest,EventIntegrationAndRecoveryTest` inside `order-service`.
+- **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest,EventIntegrationAndRecoveryTest,DltReplayServiceTest,CorrelationIdUtilsTest,CorrelationIdFilterTest,CorrelationIdProducerInterceptorTest` inside `order-service`.
+
+## Observability & Operational Monitoring
+- **Correlation ID Propagation:** `X-Correlation-ID` header validated and sanitized (`^[A-Za-z0-9_-]{1,64}$` with secure UUID fallback) at Gateway, propagated to SLF4J MDC in all services, forwarded over OpenFeign inter-service calls, and attached to Kafka message headers via `CorrelationIdProducerInterceptor`.
+- **Structured Operational Logs:** All event transitions (Outbox publish/retry/failure, Consumer receipt/dedup/success/DLT, DLT replay) output structured fields (`timestamp`, `level`, `service`, `correlationId`, `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset`, `attempt`, `durationMs`, `outcome`).
+- **Health & Actuator Endpoints:** Actuator `/actuator/health` and `/actuator/info` enabled and secured across Gateway (8080), User Service (8081), Product Service (8082), Order Service (8083), and Config Server (8888).
+- **Operational Runbook & Queries:** Schema-accurate PostgreSQL monitoring queries for `outbox_events` (`PENDING` retry queue and `FAILED` terminal errors) and `orders` (`COMPENSATION_PENDING`) documented in [docs/event-driven-architecture.md](file:///docs/event-driven-architecture.md).

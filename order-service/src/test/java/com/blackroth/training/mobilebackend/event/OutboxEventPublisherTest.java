@@ -198,4 +198,97 @@ class OutboxEventPublisherTest {
         verifyNoInteractions(outboxRepository);
         verifyNoInteractions(kafkaTemplate);
     }
+
+    @Test
+    @DisplayName("Successful publish after previous retry attempts records PUBLISHED and clears error")
+    void testSuccessfulRetryPublishMarksPublishedWithPriorAttempts() {
+        OrderCreatedEvent eventPayload = new OrderCreatedEvent(
+                "evt-retry-success",
+                "ORDER_CREATED",
+                "1.0",
+                Instant.now(),
+                "corr-retry-ok",
+                "400",
+                400L,
+                1L,
+                new BigDecimal("29.99")
+        );
+
+        String payloadJson = assertDoesNotThrow(() -> objectMapper.writeValueAsString(eventPayload));
+
+        OutboxEvent outboxEvent = new OutboxEvent();
+        outboxEvent.setEventId("evt-retry-success");
+        outboxEvent.setEventType("ORDER_CREATED");
+        outboxEvent.setAggregateId("400");
+        outboxEvent.setTopic("order.created");
+        outboxEvent.setPayload(payloadJson);
+        outboxEvent.setStatus("PENDING");
+        outboxEvent.setAttempts(2);
+        outboxEvent.setLastError("Previous connection error");
+        outboxEvent.setNextAttemptAt(Instant.now());
+
+        when(outboxRepository.findTop100ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(eq("PENDING"), any()))
+                .thenReturn(List.of(outboxEvent));
+
+        CompletableFuture<SendResult<String, OrderCreatedEvent>> future = CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(eq("order.created"), eq("400"), any(OrderCreatedEvent.class))).thenReturn(future);
+
+        publisher.publishPendingEvents();
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxRepository).save(captor.capture());
+
+        OutboxEvent saved = captor.getValue();
+        assertEquals("PUBLISHED", saved.getStatus());
+        assertNotNull(saved.getPublishedAt());
+        assertNull(saved.getLastError(), "Error must be cleared on successful publish");
+        assertEquals(2, saved.getAttempts(), "Attempts count remains unchanged upon success");
+    }
+
+    @Test
+    @DisplayName("Sanitizes sensitive information (passwords, tokens) in outbox error message")
+    void testSanitizesSensitiveInformationInLastError() {
+        OrderCreatedEvent eventPayload = new OrderCreatedEvent(
+                "evt-sensitive-err",
+                "ORDER_CREATED",
+                "1.0",
+                Instant.now(),
+                "corr-sec",
+                "500",
+                500L,
+                1L,
+                new BigDecimal("10.00")
+        );
+
+        String payloadJson = assertDoesNotThrow(() -> objectMapper.writeValueAsString(eventPayload));
+
+        OutboxEvent outboxEvent = new OutboxEvent();
+        outboxEvent.setEventId("evt-sensitive-err");
+        outboxEvent.setEventType("ORDER_CREATED");
+        outboxEvent.setAggregateId("500");
+        outboxEvent.setTopic("order.created");
+        outboxEvent.setPayload(payloadJson);
+        outboxEvent.setStatus("PENDING");
+        outboxEvent.setAttempts(0);
+        outboxEvent.setNextAttemptAt(Instant.now());
+
+        when(outboxRepository.findTop100ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(eq("PENDING"), any()))
+                .thenReturn(List.of(outboxEvent));
+
+        CompletableFuture<SendResult<String, OrderCreatedEvent>> failedFuture = new CompletableFuture<>();
+        failedFuture.completeExceptionally(new RuntimeException("Connection failed: password=supersecretpass;token=jwt_token_secret;user=order_app"));
+        when(kafkaTemplate.send(eq("order.created"), eq("500"), any(OrderCreatedEvent.class))).thenReturn(failedFuture);
+
+        publisher.publishPendingEvents();
+
+        ArgumentCaptor<OutboxEvent> captor = ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxRepository).save(captor.capture());
+
+        OutboxEvent saved = captor.getValue();
+        assertNotNull(saved.getLastError());
+        assertFalse(saved.getLastError().contains("supersecretpass"), "Password must be sanitized");
+        assertFalse(saved.getLastError().contains("jwt_token_secret"), "Token must be sanitized");
+        assertTrue(saved.getLastError().contains("password=***"));
+        assertTrue(saved.getLastError().contains("token=***"));
+    }
 }

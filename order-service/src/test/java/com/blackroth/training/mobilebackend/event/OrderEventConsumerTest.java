@@ -87,4 +87,57 @@ class OrderEventConsumerTest {
         verify(processedEventRepository, never()).existsByEventId(any());
         verify(processedEventRepository, never()).saveAndFlush(any());
     }
+
+    @Test
+    @DisplayName("Processes new event successfully with topic, partition, offset, and correlation ID headers")
+    void testProcessNewEventWithKafkaHeadersAndCorrelationId() {
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-hdr-1",
+                "ORDER_CREATED",
+                "1.0",
+                Instant.now(),
+                "corr-payload",
+                150L,
+                1L,
+                new BigDecimal("75.00")
+        );
+
+        when(processedEventRepository.existsByEventId("evt-hdr-1")).thenReturn(false);
+
+        orderEventConsumer.consumeOrderCreated(event, "order.created", 0, 42L, "corr-from-header");
+
+        verify(processedEventRepository).existsByEventId("evt-hdr-1");
+        verify(processedEventRepository).saveAndFlush(any(ProcessedEvent.class));
+    }
+
+    @Test
+    @DisplayName("Rejects null event by throwing IllegalArgumentException for DLT routing")
+    void testConsumeNullEventThrowsAndRejectsForDlt() {
+        assertThrows(IllegalArgumentException.class,
+                () -> orderEventConsumer.consumeOrderCreated(null, "order.created", 0, 10L, "corr-null"));
+        verify(processedEventRepository, never()).existsByEventId(any());
+        verify(processedEventRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Duplicate event with Kafka headers is skipped without re-saving")
+    void testDuplicateEventWithHeadersSkipped() {
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-dup-hdr",
+                "ORDER_CREATED",
+                "1.0",
+                Instant.now(),
+                "corr-dup",
+                250L,
+                1L,
+                new BigDecimal("120.00")
+        );
+
+        when(processedEventRepository.existsByEventId("evt-dup-hdr")).thenReturn(true);
+
+        orderEventConsumer.consumeOrderCreated(event, "order.created", 1, 99L, "corr-dup");
+
+        verify(processedEventRepository).existsByEventId("evt-dup-hdr");
+        verify(processedEventRepository, never()).saveAndFlush(any(ProcessedEvent.class));
+    }
 }

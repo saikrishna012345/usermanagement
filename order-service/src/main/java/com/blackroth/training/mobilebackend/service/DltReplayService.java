@@ -1,15 +1,14 @@
 package com.blackroth.training.mobilebackend.service;
 
 import com.blackroth.training.mobilebackend.event.OrderCreatedEvent;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
+import com.blackroth.training.mobilebackend.util.CorrelationIdUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -32,15 +31,41 @@ public class DltReplayService {
             throw new IllegalArgumentException("Cannot replay null event or event without eventId");
         }
 
+        long startTime = System.currentTimeMillis();
+        String correlationId = CorrelationIdUtils.resolveCorrelationId(event.correlationId());
+
         try {
-            log.info("Replaying event {} for order {} from DLT to order.created",
+            MDC.put(CorrelationIdUtils.MDC_KEY, correlationId);
+            MDC.put("service", "order-service");
+            MDC.put("eventId", event.eventId());
+            if (event.orderId() != null) {
+                MDC.put("orderId", String.valueOf(event.orderId()));
+            }
+            MDC.put("topic", "order.created");
+
+            log.info("DLT replay initiated: eventId={}, orderId={}, targetTopic=order.created, outcome=REPLAY_ATTEMPTED",
                     event.eventId(), event.orderId());
+
             kafkaTemplate.send("order.created", String.valueOf(event.orderId()), event)
                     .get(5, TimeUnit.SECONDS);
+
+            long durationMs = System.currentTimeMillis() - startTime;
+            log.info("DLT replay succeeded: eventId={}, orderId={}, targetTopic=order.created, durationMs={}, outcome=REPLAY_SUCCESS",
+                    event.eventId(), event.orderId(), durationMs);
             return true;
+
         } catch (Exception e) {
-            log.error("Failed to replay event {} to order.created: {}", event.eventId(), e.getMessage(), e);
+            long durationMs = System.currentTimeMillis() - startTime;
+            log.error("DLT replay failed: eventId={}, orderId={}, targetTopic=order.created, durationMs={}, error={}, outcome=REPLAY_FAILED",
+                    event.eventId(), event.orderId(), durationMs, e.getMessage(), e);
             return false;
+
+        } finally {
+            MDC.remove(CorrelationIdUtils.MDC_KEY);
+            MDC.remove("service");
+            MDC.remove("eventId");
+            MDC.remove("orderId");
+            MDC.remove("topic");
         }
     }
 }

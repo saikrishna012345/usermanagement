@@ -371,3 +371,126 @@ Scenarios verified:
    - *Implemented & Active*: `OrderEventConsumer` in `order-service` actively listens to `order.created` (group: `order-service`).
    - *Planned Roadmap*: Standalone notification and analytics consumers are planned downstream microservices that will subscribe to `notification.requested`, `order.shipped`, and `order.delivered`.
 
+---
+
+## 9. Observability, Monitoring, and Operational Runbook
+
+### 9.1 Correlation ID Lifecycle & Propagation
+Distributed tracing is maintained end-to-end across synchronous HTTP calls and asynchronous Kafka events using the `X-Correlation-ID` header and SLF4J MDC.
+
+1. **Ingress & Gateway Filtering (`CorrelationIdGlobalFilter`):**
+   - The API Gateway inspects incoming HTTP requests for `X-Correlation-ID`.
+   - If missing, blank, exceeding 64 characters, or containing malformed/CRLF characters, it generates a cryptographically random UUID via `CorrelationIdUtils.resolveCorrelationId(...)`.
+   - The sanitized correlation ID is set on both the mutated downstream `ServerHttpRequest` and the HTTP response header `X-Correlation-ID`.
+2. **Servlet Service Filters (`CorrelationIdFilter`):**
+   - In `order-service`, `product-service`, and `user-service`, `CorrelationIdFilter` binds the sanitized ID to the SLF4J MDC (`correlationId`) for the thread's lifecycle, echoes it in the HTTP response, and clears MDC in a `finally` block.
+3. **Inter-Service REST Propagation (`CorrelationIdFeignInterceptor`):**
+   - When `OrderService` issues synchronous OpenFeign REST calls to `ProductService` (e.g. inventory reservation), `CorrelationIdFeignInterceptor` automatically attaches the active MDC correlation ID to the outgoing request's `X-Correlation-ID` header.
+4. **Kafka Event Envelopes & Headers (`CorrelationIdProducerInterceptor`):**
+   - When events are staged in PostgreSQL (`outbox_events`), the event envelope payload (`OrderCreatedEvent`) preserves `correlationId`.
+   - When `OutboxEventPublisher` transmits events to Kafka, `CorrelationIdProducerInterceptor` intercepts the `ProducerRecord` and automatically injects the byte-encoded `X-Correlation-ID` Kafka record header from MDC or payload.
+5. **Consumer Tracing (`OrderEventConsumer`):**
+   - The consumer extracts the `X-Correlation-ID` Kafka message header (with fallback to `event.correlationId()` or a fresh UUID), binding `correlationId`, `service`, `topic`, `partition`, `offset`, `eventId`, and `orderId` to MDC before processing.
+
+### 9.2 Structured Operational Logging Fields & Event Transitions
+The services use structured logging formatted according to:
+`%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [corr=%X{correlationId} order=%X{orderId}] - %msg%n`
+
+#### Key Operational Transition Outcomes:
+| Transition | Level | Component | Key Fields Logged | Outcome Tag |
+|---|---|---|---|---|
+| Initial Outbox Publish | `INFO` | `OutboxEventPublisher` | `eventId`, `eventType`, `topic`, `orderId`, `attempt=1`, `durationMs` | `outcome=PUBLISHED` |
+| Outbox Retry Publish | `INFO` | `OutboxEventPublisher` | `eventId`, `eventType`, `topic`, `orderId`, `attempt=N`, `durationMs` | `outcome=PUBLISHED` |
+| Outbox Retry Scheduled | `WARN` | `OutboxEventPublisher` | `eventId`, `eventType`, `topic`, `orderId`, `attempt`, `nextAttemptAt`, `lastError`, `durationMs` | `outcome=RETRY_SCHEDULED` |
+| Outbox Terminal Failure | `ERROR` | `OutboxEventPublisher` | `eventId`, `eventType`, `topic`, `orderId`, `attempt=5/5`, `lastError`, `durationMs` | `outcome=FAILED` |
+| Consumer Event Received | `INFO` | `OrderEventConsumer` | `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset` | `outcome=RECEIVED` |
+| Duplicate Event Skipped | `WARN` | `OrderEventConsumer` | `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset`, `durationMs` | `outcome=SKIPPED_DUPLICATE` |
+| Consumer Success | `INFO` | `OrderEventConsumer` | `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset`, `durationMs` | `outcome=PROCESSED` |
+| Consumer Poison Pill | `ERROR` | `OrderEventConsumer` | `eventId`, `orderId`, `error`, `topic`, `partition`, `offset` | `outcome=DLT_ROUTED` |
+| DLT Replay Initiated | `INFO` | `DltReplayService` | `eventId`, `orderId`, `targetTopic=order.created` | `outcome=REPLAY_ATTEMPTED` |
+| DLT Replay Success | `INFO` | `DltReplayService` | `eventId`, `orderId`, `targetTopic=order.created`, `durationMs` | `outcome=REPLAY_SUCCESS` |
+| DLT Replay Failed | `ERROR` | `DltReplayService` | `eventId`, `orderId`, `targetTopic=order.created`, `durationMs`, `error` | `outcome=REPLAY_FAILED` |
+
+### 9.3 Health & Operational Checks
+#### Service Health Endpoints:
+- Gateway: `http://localhost:8080/actuator/health`
+- User Service: `http://localhost:8081/actuator/health`
+- Product Service: `http://localhost:8082/actuator/health`
+- Order Service: `http://localhost:8083/actuator/health`
+- Config Server: `http://localhost:8888/actuator/health`
+- Eureka Discovery: `http://localhost:8761`
+
+#### Kafka Broker & Consumer Group Lag Inspection:
+1. **Check Kafka Broker Availability:**
+   ```powershell
+   Test-NetConnection -ComputerName localhost -Port 9092
+   ```
+   Or via Docker container:
+   ```powershell
+   docker exec -it kafka kafka-broker-api-versions --bootstrap-server localhost:9092
+   ```
+2. **Inspect Consumer Group Lag (`order-service`):**
+   ```powershell
+   docker exec -it kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-service
+   ```
+   *Expected output columns:* `GROUP`, `TOPIC`, `PARTITION`, `CURRENT-OFFSET`, `LOG-END-OFFSET`, `LAG`, `CONSUMER-ID`.
+   *Alert Condition:* Any non-zero `LAG` that consistently grows over time indicates consumer starvation or deserialization blockage.
+
+### 9.4 Operational SQL Queries (Schema-Accurate)
+
+#### 1. Outbox Records Stuck in `PENDING` (Retries Pending / Delayed):
+```sql
+SELECT id, event_id, event_type, topic, aggregate_id, attempts, next_attempt_at, last_error, created_at
+FROM outbox_events
+WHERE status = 'PENDING' AND next_attempt_at <= NOW()
+ORDER BY created_at ASC;
+```
+
+#### 2. Outbox Terminal Failures Requiring Investigation (`FAILED`):
+```sql
+SELECT id, event_id, event_type, topic, aggregate_id, attempts, last_error, created_at
+FROM outbox_events
+WHERE status = 'FAILED'
+ORDER BY created_at DESC;
+```
+
+#### 3. Outbox Health & Throughput Summary:
+```sql
+SELECT status, COUNT(*) AS count, AVG(attempts) AS avg_attempts, MAX(created_at) AS latest_event
+FROM outbox_events
+GROUP BY status;
+```
+
+#### 4. Orders in `COMPENSATION_PENDING` (Saga Reconciliation Required):
+```sql
+SELECT id, user_id, total_amount, status, created_at, updated_at
+FROM orders
+WHERE status = 'COMPENSATION_PENDING'
+ORDER BY created_at ASC;
+```
+
+#### 5. Audit Consumer Deduplication Table:
+```sql
+SELECT event_id, event_type, processed_at
+FROM processed_events
+ORDER BY processed_at DESC
+LIMIT 50;
+```
+
+### 9.5 Implemented vs. Planned Components
+- **Implemented & Active:**
+  - `OrderEventConsumer` in `order-service` (consumer group: `order-service`, topic: `order.created`).
+  - Outbox poller `OutboxEventPublisher` in `order-service`.
+  - Dead Letter Topic routing to `order.created.dlt` via Spring `DeadLetterPublishingRecoverer`.
+  - Manual operational DLT replay via `DltReplayService`.
+  - Synchronous inventory reservation via `ProductClient` (OpenFeign).
+- **Planned / Future Roadmap (NOT currently implemented):**
+  - Standalone notification consumer (`notification-service` listening on `notification.requested`).
+  - Standalone analytics consumer (`analytics-service`).
+  - Asynchronous inventory reservation consumer.
+
+### 9.6 Observability Limitations
+- **Single-Node Actuator Scope:** Spring Boot Actuator endpoints provide process-local health and metrics. In multi-instance deployments, a metric aggregator (e.g. Prometheus + Grafana) is required.
+- **Log Correlation vs. APM Tracing:** Logs correlate across services using `X-Correlation-ID` and MDC, but distributed span timing / dependency graph visualization requires an OpenTelemetry / Zipkin collector.
+- **Outbox Polling Resolution:** The Outbox poller runs at fixed intervals (2000ms), meaning publication latency is bounded by the polling interval rather than real-time CDC.
+
