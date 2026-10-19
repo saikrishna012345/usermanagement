@@ -625,3 +625,242 @@ Spans strictly follow OpenTelemetry Semantic Conventions and enforce data privac
   - Notification Service tracing consumer (`notification.requested`).
   - Analytics Service tracing consumer.
 
+---
+
+## 11. Resilience Testing, Chaos Recovery, and Fault Tolerance
+
+This section documents the resilience mechanisms, chaos recovery patterns, circuit breaker configurations, consumer idempotency safeguards, Saga compensation state machine, operational inspection runbooks, and manual recovery procedures.
+
+### 11.1 OpenFeign Timeout, Fallback, and Circuit Breaker Configuration
+
+Inter-service communication from `order-service` to `product-service` is governed by Apache HttpClient 5 (HC5), OpenFeign, and Resilience4j:
+
+| Parameter | Configuration Property | Configured Value | Behavior Under Failure |
+|---|---|---|---|
+| **Connect Timeout** | `spring.cloud.openfeign.client.config.product-service.connectTimeout` | `2000ms` (2s) | Aborts connection establishment if product-service host/port is unresponsive. |
+| **Read Timeout** | `spring.cloud.openfeign.client.config.product-service.readTimeout` | `5000ms` (5s) | Aborts slow/hanging HTTP responses, throwing `RetryableException` / `SocketTimeoutException`. |
+| **Circuit Breaker** | `spring.cloud.openfeign.circuitbreaker.enabled` | `true` | Wraps Feign calls in a Resilience4j circuit breaker named `product-service`. |
+| **Time Limiter** | `spring.cloud.circuitbreaker.resilience4j.disable-time-limiter` | `true` | Feign HC5 socket timeouts govern request duration; avoids duplicate async thread interruptions. |
+| **Sliding Window** | `resilience4j.circuitbreaker.instances.product-service.slidingWindowSize` | `10` | Evaluates failure rate over the last 10 recorded calls. |
+| **Min Call Threshold** | `resilience4j.circuitbreaker.instances.product-service.minimumNumberOfCalls` | `5` | Requires at least 5 calls before circuit state can transition to `OPEN`. |
+| **Failure Rate Threshold** | `resilience4j.circuitbreaker.instances.product-service.failureRateThreshold` | `50%` | Opens circuit if $\ge 50\%$ of calls fail within the sliding window. |
+| **Open Wait Duration** | `resilience4j.circuitbreaker.instances.product-service.waitDurationInOpenState` | `10s` (10,000ms) | Fast-rejects all calls with `CallNotPermittedException` for 10s before probing health. |
+| **Half-Open Calls** | `resilience4j.circuitbreaker.instances.product-service.permittedNumberOfCallsInHalfOpenState` | `2` | Allows 2 trial requests in `HALF_OPEN` state to test downstream recovery. |
+| **Retry Bounds** | `resilience4j.retry.instances.product-service.maxAttempts` | `3` (500ms delay) | Bounded retries for transient failures; avoids retry storms. |
+
+#### Fallback Safety Guarantees (`ProductClientFallbackFactory`):
+1. **Never Falsely Reports Success:** The fallback factory will **never** return a dummy object or null indicating that inventory was reserved.
+2. **HTTP 404 (NotFound):** Maps directly to `ResourceNotFoundException("Product not found with id: ...")`.
+3. **HTTP 400 / 409 (Conflict/BadRequest):** Maps directly to `BusinessException` with downstream validation details preserved.
+4. **Timeouts / 503 / Circuit Open (`CallNotPermittedException`):** Maps to `ProductServiceUnavailableException("Product service is temporarily unavailable", cause)`, preserving root cause for operational diagnosis.
+
+---
+
+### 11.2 Kafka Outbox Failure, Exponential Backoff, and Chaos Recovery
+
+The Transactional Outbox pattern guarantees at-least-once delivery while isolating business database transactions from Kafka broker availability:
+
+```
+[Order Transaction] ──(ACID Commit)──> [orders table: PENDING/CONFIRMED]
+                                       [outbox_events table: PENDING, attempts=0]
+                                                     │
+                                                     ▼ (Polled every 2000ms)
+                                       [OutboxEventPublisher]
+                                                     │
+                             ┌───────────────────────┴───────────────────────┐
+                             │ (Kafka Send)                                  │ (Kafka Broker Outage)
+                             ▼                                               ▼
+                      [Kafka Broker ACK]                              [Exception Caught]
+                             │                                               │
+               [Update status = 'PUBLISHED']                 [attempts = attempts + 1]
+               [published_at = NOW()]                        [next_attempt_at = NOW() + backoff]
+               [last_error = NULL]                           [last_error = sanitize(error)]
+                                                                             │
+                                                     ┌───────────────────────┴───────────────────────┐
+                                                     │ attempts < 5                                  │ attempts >= 5
+                                                     ▼                                               ▼
+                                            [status = 'PENDING']                            [status = 'FAILED']
+                                            (Exponential Retry)                             (Terminal Outbox DLQ)
+```
+
+#### Exponential Backoff Formula:
+$$\text{delaySeconds} = \min(60, 2^{\text{attempts}})$$
+- **Attempt 1:** $2^1 = 2$ seconds
+- **Attempt 2:** $2^2 = 4$ seconds
+- **Attempt 3:** $2^3 = 8$ seconds
+- **Attempt 4:** $2^4 = 16$ seconds
+- **Attempt 5:** $2^5 = 32$ seconds $\rightarrow$ Exceeds `MAX_ATTEMPTS = 5` $\rightarrow$ Transitions to `FAILED`.
+
+#### Sensitive Credential Masking in Outbox Errors:
+`OutboxEventPublisher.sanitizeErrorMessage` replaces all sensitive patterns (`token=***`, `password=***`, `secret=***`, `authorization=***`) before writing to PostgreSQL, preventing token leakage in operational logs and tables.
+
+---
+
+### 11.3 Consumer Idempotency, Non-Retryable Exceptions, and DLT Routing
+
+`OrderEventConsumer` and Spring Kafka `DefaultErrorHandler` enforce strict exactly-once processing semantics:
+
+1. **Deduplication Store (`processed_events` table):**
+   - Unique primary key on `event_id`.
+   - Consumer performs atomic `processedEventRepository.existsByEventId(eventId)` check before processing.
+   - Duplicate events are logged as `SKIPPED_DUPLICATE` and offset is committed immediately without repeating business side-effects.
+2. **Fatal / Non-Retryable Exceptions:**
+   - `IllegalArgumentException` (e.g. malformed JSON, missing `eventId`, null payload).
+   - `MessageConversionException` and `DeserializationException`.
+   - These bypass retry loops and are routed immediately by `DeadLetterPublishingRecoverer` to `${topic}.dlt` (`order.created.dlt`), preserving the partition and correlation headers.
+3. **Transient Exceptions:**
+   - Spring Kafka `DefaultErrorHandler` applies `FixedBackOff(2000L, 3L)` (3 retries at 2000ms intervals).
+   - If retries exhaust, record is forwarded to `.dlt` with error headers (`kafka_dlt-exception-fqcn`, `kafka_dlt-exception-message`).
+4. **DLT Replay (`DltReplayService`):**
+   - Replays dead-letter events back to `order.created`.
+   - Preserves `orderId` partition key and distributed tracing correlation ID.
+
+---
+
+### 11.4 Saga State Transitions and Inventory Compensation
+
+The Order creation Saga coordinates between `order-service` and `product-service`:
+
+```
+           [POST /orders]
+                 │
+                 ▼
+          [Order: PENDING]
+                 │
+                 ▼
+       [Reserve Stock in Product Service]
+                 │
+        ┌────────┴────────┐
+     (Success)         (Failure / Timeout)
+        │                 │
+        ▼                 ▼
+   [Payment Auth]   [Compensate: Release All Items]
+        │                 │
+  ┌─────┴─────┐      ┌────┴────┐
+(Success)  (Failure) │         │
+  │           │      │         │
+  ▼           ▼      ▼         ▼
+[Commit]   [Compensate] (All Release OK) (Any Release Failed)
+  │           │              │                   │
+  ▼           │              ▼                   ▼
+[CONFIRMED]   │        [CANCELLED]      [COMPENSATION_PENDING]
+  │           │              │                   │
+  ▼           │              ▼                   ▼
+(Outbox:      │        (Outbox:            (No Outbox Event;
+ ORDER_CREATED)        ORDER_CANCELLED)    Flagged for Ops)
+```
+
+#### Saga State Rules:
+- **`CONFIRMED`:** All stock reservations succeeded, payment was authorized, reservations committed, and `ORDER_CREATED` event inserted into Outbox.
+- **`CANCELLED`:** Payment failed or reservation timed out, **AND** all reservations were successfully released back to inventory. `ORDER_CANCELLED` event inserted into Outbox.
+- **`COMPENSATION_PENDING`:** Payment failed or reservation timed out, **BUT** releasing one or more inventory reservations failed (e.g. downstream product-service unavailable). No `ORDER_CANCELLED` event is published. The order is quarantined in `COMPENSATION_PENDING` to prevent phantom stock and alert operations.
+
+---
+
+### 11.5 Operational Runbook and Inspection Commands
+
+#### 1. Inspect Kafka Consumer Groups & Lag
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --group order-service
+```
+
+#### 2. Inspect Pending Outbox Retries & Backoff Schedule
+```bash
+docker exec -it postgres-order psql -U postgres -d order_db -c \
+  "SELECT id, event_id, event_type, status, attempts, next_attempt_at, last_error \
+   FROM outbox_events \
+   WHERE status = 'PENDING' \
+   ORDER BY next_attempt_at ASC;"
+```
+
+#### 3. Inspect Failed Outbox Events (Terminal Dead Letter Events)
+```bash
+docker exec -it postgres-order psql -U postgres -d order_db -c \
+  "SELECT id, event_id, aggregate_id, event_type, attempts, last_error \
+   FROM outbox_events \
+   WHERE status = 'FAILED' \
+   ORDER BY id DESC;"
+```
+
+#### 4. Identify `COMPENSATION_PENDING` Orders
+```bash
+docker exec -it postgres-order psql -U postgres -d order_db -c \
+  "SELECT id, user_id, status, total_amount, created_at \
+   FROM orders \
+   WHERE status = 'COMPENSATION_PENDING' \
+   ORDER BY id DESC;"
+```
+
+#### 5. Inspect Processed Events (Consumer Deduplication Store)
+```bash
+docker exec -it postgres-order psql -U postgres -d order_db -c \
+  "SELECT event_id, event_type, processed_at \
+   FROM processed_events \
+   ORDER BY processed_at DESC \
+   LIMIT 10;"
+```
+
+#### 6. Inspect Inventory Reservations in Product Service
+```bash
+docker exec -it postgres-product psql -U postgres -d product_db -c \
+  "SELECT id, order_id, product_id, quantity, status, created_at \
+   FROM inventory_reservations \
+   ORDER BY id DESC \
+   LIMIT 10;"
+```
+
+#### 7. Inspect Distributed Traces in Jaeger
+- **UI:** Navigate to `http://localhost:16686`
+- **Query Services via HTTP:**
+  ```bash
+  curl.exe -s http://localhost:16686/api/services
+  ```
+- **Filter Traces by Tags:**
+  - `messaging.system = kafka`
+  - `messaging.operation = publish` or `receive`
+  - `error = true`
+
+---
+
+### 11.6 Manual Recovery Procedures
+
+#### Procedure A: Recovering Failed Outbox Events
+When a prolonged Kafka broker outage causes outbox events to reach `attempts = 5` and transition to `status = 'FAILED'`:
+1. Verify Kafka cluster health: `docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`.
+2. Re-enqueue failed records for delivery:
+   ```sql
+   UPDATE outbox_events
+   SET status = 'PENDING', attempts = 0, next_attempt_at = NOW(), last_error = NULL
+   WHERE status = 'FAILED';
+   ```
+3. Monitor `OutboxEventPublisher` logs for `outcome=PUBLISHED`.
+
+#### Procedure B: Recovering `COMPENSATION_PENDING` Orders
+When network partition occurs during downstream inventory compensation:
+1. Identify affected orders:
+   ```sql
+   SELECT id, user_id FROM orders WHERE status = 'COMPENSATION_PENDING';
+   ```
+2. For each pending order, inspect product reservation status in `product_db`:
+   ```sql
+   SELECT order_id, product_id, quantity, status FROM inventory_reservations WHERE order_id = :orderId;
+   ```
+3. Release reservation manually if still in `RESERVED` status:
+   ```bash
+   curl.exe -X PATCH "http://localhost:8080/api/v1/products/{productId}/reservations/release?orderId={orderId}" \
+     -H "Authorization: Bearer <ADMIN_JWT>"
+   ```
+4. Once all items are confirmed released, transition order to `CANCELLED` and publish event:
+   ```sql
+   UPDATE orders SET status = 'CANCELLED' WHERE id = :orderId AND status = 'COMPENSATION_PENDING';
+   ```
+
+---
+
+### 11.7 Known Limitations & Environmental Constraints
+1. **Container OTLP DNS Resolution:** In local Docker environments, services default to `http://localhost:4318`. When running inside Docker containers on a bridge network, the endpoint must be configured as `http://jaeger:4318/v1/traces`. If Jaeger is unreachable, Micrometer Tracing drops spans silently without interrupting business transactions.
+2. **Notification & Analytics Consumers:** Downstream notification and analytics consumers are planned on the roadmap; current resilience tests focus on the implemented `OrderEventConsumer` and Outbox pipeline.
+

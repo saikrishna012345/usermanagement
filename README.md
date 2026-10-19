@@ -56,3 +56,13 @@ For order creation, Product Service must be registered/running because Order Ser
   - **Jaeger Web UI:** `http://localhost:16686`
   - **OTLP HTTP Endpoint:** `http://localhost:4318/v1/traces` (container DNS: `http://jaeger:4318/v1/traces`)
 - **Tracing Tests:** `mvn test -Dtest=TraceContextUtilsTest,TraceContextFilterTest,TraceContextGlobalFilterTest,CorrelationIdFeignInterceptorTest,CorrelationIdProducerInterceptorTest,DistributedTracingTest`
+
+## Resilience Testing & Chaos Recovery
+- **OpenFeign Failures & Timeouts:** Connect timeout (2s) and read timeout (5s) enforce bounded calls. `ProductClientFallbackFactory` maps downstream 404 to `ResourceNotFoundException`, 400/409 to `BusinessException`, and 503/timeouts/circuit breaker rejections to `ProductServiceUnavailableException` without ever fabricating false success or pretending stock was reserved.
+- **Circuit Breaker Transitions & Bounded Retries:** Resilience4j circuit breaker on `product-service` triggers `OPEN` state after $\ge 50\%$ failure rate over 10 calls, fast-rejecting with `CallNotPermittedException` for 10s, transitioning to `HALF_OPEN` for 2 probe calls, and automatically recovering to `CLOSED`. Bounded retries limit execution to 3 attempts.
+- **Transactional Outbox Recovery:** Kafka outages cause events to remain `PENDING` with exponential backoff ($\min(60, 2^{\text{attempts}})$). When the broker recovers, the publisher resumes and transitions records to `PUBLISHED`. Terminal failures after 5 attempts transition to `FAILED` with sanitized error details (`password=***`, `token=***`).
+- **Consumer Idempotency & DLT Routing:** `OrderEventConsumer` enforces deduplication via `processed_events`. Duplicate events are skipped (`SKIPPED_DUPLICATE`). Fatal non-retryable exceptions (`IllegalArgumentException`, `DeserializationException`) route immediately to `order.created.dlt`. Transient failures retry 3 times with `FixedBackOff(2000L, 3L)`. `DltReplayService` enables safe replay preserving partition keys and correlation IDs.
+- **Saga Consistency & Compensation:** When reservation or payment fails, `OrderService` executes compensating release calls on all reserved items. If all releases succeed, the order transitions to `CANCELLED` and publishes `ORDER_CANCELLED`. If any release fails, the order transitions to `COMPENSATION_PENDING` (no cancellation event emitted), isolating the failure for operational investigation.
+- **Resilience Test Suite:**
+  - `mvn test -Dtest=OpenFeignResilienceTest,KafkaOutboxResilienceTest,ConsumerResilienceTest,SagaCompensationResilienceTest,ResilienceObservabilityTest -pl order-service`
+  - `mvn test -Dtest=ProductReservationChaosTest -pl product-service`
