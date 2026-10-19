@@ -23,9 +23,22 @@ For order creation, Product Service must be registered/running because Order Ser
 
 ## Verification & Integration Testing
 - Detailed testing guide, event schemas, Saga flows, and integration verification checklist are documented in [INTEGRATION_TESTING_GUIDE.md](file:///INTEGRATION_TESTING_GUIDE.md).
+- Comprehensive Event Contracts, Kafka Topic Topology, Outbox & Idempotency boundaries, and Sequence Diagrams are documented in [docs/event-driven-architecture.md](file:///docs/event-driven-architecture.md).
 - `GET /api/v1/users/{id}` through Gateway
 - `GET /api/v1/products/{id}` through Gateway
 - `POST /api/v1/orders` through Gateway
 - Stop Product Service and repeat order creation to verify controlled downstream failure.
 - Send an expired/invalid JWT to a protected endpoint to verify Gateway authentication.
 - Full reactor test suite: `mvn clean verify`
+
+## Event Contracts & Kafka Topics
+- **Canonical Envelope:** `EventEnvelope<T>` (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `aggregateId`, `payload`).
+- **Core Topics:**
+  - `order.created`, `order.cancelled`, `order.shipped`, `order.delivered` (partition key: `orderId`).
+  - `inventory.updated` (partition key: `productId`).
+  - `notification.requested` (partition key: `recipientUserId`).
+  - Dead-letter topics with suffix `.dlt` (e.g. `order.created.dlt`).
+- **Transaction Guarantee:** Local PostgreSQL ACID transaction inserts into `orders` and `outbox_events` atomically; background `OutboxEventPublisher` delivers at-least-once to Kafka with exponential backoff on broker failure.
+- **Consumer Deduplication:** Consumers enforce idempotency by recording and checking `eventId` in `processed_events`.
+- **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest` inside `order-service`.
+

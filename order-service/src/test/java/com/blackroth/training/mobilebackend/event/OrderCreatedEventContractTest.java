@@ -45,6 +45,7 @@ class OrderCreatedEventContractTest {
         assertEquals(original.eventType(), deserialized.eventType());
         assertEquals(original.schemaVersion(), deserialized.schemaVersion());
         assertEquals(original.correlationId(), deserialized.correlationId());
+        assertEquals("42", deserialized.aggregateId());
         assertEquals(original.orderId(), deserialized.orderId());
         assertEquals(original.userId(), deserialized.userId());
         assertEquals(original.totalAmount(), deserialized.totalAmount());

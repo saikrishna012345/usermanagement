@@ -11,6 +11,7 @@ public record OrderCreatedEvent(
         String schemaVersion,
         Instant occurredAt,
         String correlationId,
+        String aggregateId,
         Long orderId,
         Long userId,
         BigDecimal totalAmount
@@ -23,7 +24,27 @@ public record OrderCreatedEvent(
             BigDecimal totalAmount,
             Instant occurredAt
     ) {
-        this(eventId, eventType, "1.0", occurredAt, null, orderId, userId, totalAmount);
+        this(eventId, eventType, "1.0", occurredAt, null, orderId != null ? String.valueOf(orderId) : null, orderId, userId, totalAmount);
+    }
+
+    public OrderCreatedEvent(
+            String eventId,
+            String eventType,
+            String schemaVersion,
+            Instant occurredAt,
+            String correlationId,
+            Long orderId,
+            Long userId,
+            BigDecimal totalAmount
+    ) {
+        this(eventId, eventType, schemaVersion, occurredAt, correlationId, orderId != null ? String.valueOf(orderId) : null, orderId, userId, totalAmount);
+    }
+
+    public String aggregateId() {
+        if (aggregateId != null && !aggregateId.isBlank()) {
+            return aggregateId;
+        }
+        return orderId != null ? String.valueOf(orderId) : null;
     }
 
     public void validate() {
@@ -43,4 +64,4 @@ public record OrderCreatedEvent(
             throw new IllegalArgumentException("orderId must be a positive number");
         }
     }
-}
+}

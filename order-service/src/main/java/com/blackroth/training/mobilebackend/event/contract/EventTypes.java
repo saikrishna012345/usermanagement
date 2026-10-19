@@ -1,0 +1,13 @@
+package com.blackroth.training.mobilebackend.event.contract;
+
+public final class EventTypes {
+
+    private EventTypes() {}
+
+    public static final String ORDER_CREATED = "ORDER_CREATED";
+    public static final String ORDER_CANCELLED = "ORDER_CANCELLED";
+    public static final String ORDER_SHIPPED = "ORDER_SHIPPED";
+    public static final String ORDER_DELIVERED = "ORDER_DELIVERED";
+    public static final String INVENTORY_UPDATED = "INVENTORY_UPDATED";
+    public static final String NOTIFICATION_REQUESTED = "NOTIFICATION_REQUESTED";
+}
