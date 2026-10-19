@@ -49,6 +49,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("@userSecurity.isCurrentUserOrAdmin(authentication, #id)")
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<UserResponse>> getUserById(@PathVariable Long id) {
         UserResponse user = userService.getUserById(id);
@@ -56,6 +57,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("@userSecurity.isCurrentUserOrAdmin(authentication, #id)")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
             @PathVariable Long id, @Valid @RequestBody UserRequest request) {

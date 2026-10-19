@@ -88,6 +88,21 @@ services:
       - microservices-network
 
   # ============================================================
+  # DISTRIBUTED TRACING (JAEGER)
+  # ============================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - microservices-network
+
+  # ============================================================
   # USER DATABASE
   # ============================================================
   postgres-user:
@@ -165,6 +180,7 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
     depends_on:
       - config-server
       - eureka-server
@@ -198,6 +214,7 @@ services:
       EUREKA_URL: http://eureka-server:8761/eureka/
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
     depends_on:
       - config-server
       - eureka-server
@@ -233,6 +250,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       APP_JWT_SECRET: your-very-long-random-secret-key-change-this-in-production-min-256-bits
       SAGA_PAYMENT_SIMULATE_FAILURE: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
     depends_on:
       - config-server
       - eureka-server
@@ -256,6 +274,7 @@ services:
     environment:
       SPRING_APPLICATION_NAME: gateway-service
       EUREKA_URL: http://eureka-server:8761/eureka/
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
     depends_on:
       - eureka-server
       - user-service

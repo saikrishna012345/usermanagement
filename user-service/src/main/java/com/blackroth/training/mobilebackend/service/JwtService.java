@@ -23,29 +23,46 @@ public class JwtService {
     @Value("${app.jwt.refresh-token-expiration-ms}")
     private long refreshTokenExpirationMs;
 
+    public JwtService() {
+    }
+
+    public JwtService(String secret, long accessTokenExpirationMs, long refreshTokenExpirationMs) {
+        this.secret = secret;
+        this.accessTokenExpirationMs = accessTokenExpirationMs;
+        this.refreshTokenExpirationMs = refreshTokenExpirationMs;
+    }
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String generateAccessToken(String email, String role) { return generateAccessToken(null, email, role); }
+    public String generateAccessToken(String email, String role) {
+        return generateAccessToken(null, email, role);
+    }
 
     public String generateAccessToken(Long userId, String email, String role) {
         return buildToken(userId, email, role, accessTokenExpirationMs);
     }
 
-    public String generateRefreshToken(String email, String role) { return buildToken(null, email, role, refreshTokenExpirationMs); }
+    public String generateRefreshToken(String email, String role) {
+        return buildToken(null, email, role, refreshTokenExpirationMs);
+    }
 
     private String buildToken(Long userId, String email, String role, long expirationMs) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(email)
                 .claim("role", role)
-                .claim("userId", userId)
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(getSigningKey())
+                .expiration(expiry);
+
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
+
+        return builder.signWith(getSigningKey())
                 .compact();
     }
 
@@ -53,27 +70,51 @@ public class JwtService {
         return extractClaim(token, Claims::getSubject);
     }
 
-    public Long extractUserId(String token) { return extractClaim(token, claims -> claims.get("userId", Long.class)); }
+    public Long extractUserId(String token) {
+        return extractClaim(token, claims -> {
+            Object raw = claims.get("userId");
+            if (raw instanceof Number) {
+                return ((Number) raw).longValue();
+            } else if (raw != null) {
+                try {
+                    return Long.valueOf(raw.toString().trim());
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+            return null;
+        });
+    }
 
     public String extractRole(String token) {
-        return extractClaim(token, claims -> claims.get("role", String.class));
+        return extractClaim(token, claims -> {
+            String role = claims.get("role", String.class);
+            if (role == null || role.isBlank()) {
+                return null;
+            }
+            return role.startsWith("ROLE_") ? role.substring(5).toUpperCase() : role.toUpperCase();
+        });
     }
 
     public boolean isTokenValid(String token, String expectedEmail) {
         try {
             String email = extractEmail(token);
-            return email.equals(expectedEmail) && !isTokenExpired(token);
+            return email != null && email.equalsIgnoreCase(expectedEmail) && !isTokenExpired(token);
         } catch (Exception e) {
             return false;
         }
     }
 
-    private boolean isTokenExpired(String token) {
-        Date expiration = extractClaim(token, Claims::getExpiration);
-        return expiration.before(new Date());
+    public boolean isTokenExpired(String token) {
+        try {
+            Date expiration = extractClaim(token, Claims::getExpiration);
+            return expiration == null || expiration.before(new Date());
+        } catch (Exception e) {
+            return true;
+        }
     }
 
-    private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         Claims claims = Jwts.parser()
                 .verifyWith(getSigningKey())
                 .build()

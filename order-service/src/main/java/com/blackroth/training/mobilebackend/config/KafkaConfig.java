@@ -45,6 +45,10 @@ public class KafkaConfig {
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                 JsonSerializer.class
         );
+        config.put(
+                ProducerConfig.INTERCEPTOR_CLASSES_CONFIG,
+                CorrelationIdProducerInterceptor.class.getName()
+        );
 
         return new DefaultKafkaProducerFactory<>(config);
     }
@@ -81,6 +85,54 @@ public class KafkaConfig {
     @Bean
     public NewTopic orderCancelledDltTopic() {
         return TopicBuilder.name("order.cancelled.dlt")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic orderShippedTopic() {
+        return TopicBuilder.name("order.shipped")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic orderDeliveredTopic() {
+        return TopicBuilder.name("order.delivered")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic inventoryUpdatedTopic() {
+        return TopicBuilder.name("inventory.updated")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic inventoryUpdatedDltTopic() {
+        return TopicBuilder.name("inventory.updated.dlt")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic notificationRequestedTopic() {
+        return TopicBuilder.name("notification.requested")
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic notificationRequestedDltTopic() {
+        return TopicBuilder.name("notification.requested.dlt")
                 .partitions(1)
                 .replicas(1)
                 .build();

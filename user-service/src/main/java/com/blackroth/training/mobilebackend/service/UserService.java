@@ -88,7 +88,13 @@ public class UserService {
             existing.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }
         if (request.getRole() != null && !request.getRole().isBlank()) {
-            existing.setRole(request.getRole());
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            boolean isAdmin = auth != null && auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            if (isAdmin) {
+                existing.setRole(request.getRole());
+            }
         }
 
         User updated = userRepository.save(existing);

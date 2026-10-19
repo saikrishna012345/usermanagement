@@ -1,5 +1,6 @@
 package com.blackroth.training.mobilebackend.filter;
 
+import com.blackroth.training.mobilebackend.util.CorrelationIdUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,12 +10,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.UUID;
 
 @Component
 public class CorrelationIdFilter extends OncePerRequestFilter {
-
-    private static final String CORRELATION_ID = "X-Correlation-ID";
 
     @Override
     protected void doFilterInternal(
@@ -23,25 +21,21 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String correlationId =
-                request.getHeader(CORRELATION_ID);
-
-        if (correlationId == null || correlationId.isBlank()) {
-            correlationId = UUID.randomUUID().toString();
-        }
+        String rawCorrelationId = request.getHeader(CorrelationIdUtils.CORRELATION_ID_HEADER);
+        String correlationId = CorrelationIdUtils.resolveCorrelationId(rawCorrelationId);
 
         try {
-            MDC.put("correlationId", correlationId);
+            MDC.put(CorrelationIdUtils.MDC_KEY, correlationId);
 
             response.setHeader(
-                    CORRELATION_ID,
+                    CorrelationIdUtils.CORRELATION_ID_HEADER,
                     correlationId
             );
 
             filterChain.doFilter(request, response);
 
         } finally {
-            MDC.remove("correlationId");
+            MDC.remove(CorrelationIdUtils.MDC_KEY);
         }
     }
 }
