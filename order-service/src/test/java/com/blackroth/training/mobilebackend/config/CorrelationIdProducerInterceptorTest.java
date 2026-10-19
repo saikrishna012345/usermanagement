@@ -2,6 +2,7 @@ package com.blackroth.training.mobilebackend.config;
 
 import com.blackroth.training.mobilebackend.event.OrderCreatedEvent;
 import com.blackroth.training.mobilebackend.util.CorrelationIdUtils;
+import com.blackroth.training.mobilebackend.util.TraceContextUtils;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeaders;
@@ -104,6 +105,84 @@ class CorrelationIdProducerInterceptorTest {
         Header header = intercepted.headers().lastHeader(CorrelationIdUtils.CORRELATION_ID_HEADER);
         assertNotNull(header);
         assertEquals(existingId, new String(header.value(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("Interceptor injects W3C traceparent header from MDC when present")
+    void testInjectsTraceparentFromMdc() {
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        MDC.put(TraceContextUtils.MDC_TRACEPARENT, traceparent);
+
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-5", "ORDER_CREATED", "1.0", Instant.now(), "corr-1", "50", 50L, 1L, new BigDecimal("90.00")
+        );
+        ProducerRecord<String, OrderCreatedEvent> record =
+                new ProducerRecord<>("order.created", "50", event);
+
+        ProducerRecord<String, OrderCreatedEvent> intercepted = interceptor.onSend(record);
+
+        Header header = intercepted.headers().lastHeader(TraceContextUtils.TRACEPARENT_HEADER);
+        assertNotNull(header);
+        assertEquals(traceparent, new String(header.value(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("Interceptor generates safe W3C traceparent fallback when MDC lacks trace context")
+    void testGeneratesSafeTraceparentFallbackWhenMdcEmpty() {
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-6", "ORDER_CREATED", "1.0", Instant.now(), "corr-2", "60", 60L, 1L, new BigDecimal("95.00")
+        );
+        ProducerRecord<String, OrderCreatedEvent> record =
+                new ProducerRecord<>("order.created", "60", event);
+
+        ProducerRecord<String, OrderCreatedEvent> intercepted = interceptor.onSend(record);
+
+        Header header = intercepted.headers().lastHeader(TraceContextUtils.TRACEPARENT_HEADER);
+        assertNotNull(header);
+        String headerValue = new String(header.value(), StandardCharsets.UTF_8);
+        assertTrue(TraceContextUtils.isValidTraceparent(headerValue));
+    }
+
+    @Test
+    @DisplayName("Interceptor preserves existing valid traceparent header on record")
+    void testPreservesExistingValidTraceparent() {
+        RecordHeaders headers = new RecordHeaders();
+        String existingTraceparent = "00-11112222333344445555666677778888-9999aaaabbbbcccc-01";
+        headers.add(TraceContextUtils.TRACEPARENT_HEADER, existingTraceparent.getBytes(StandardCharsets.UTF_8));
+
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-7", "ORDER_CREATED", "1.0", Instant.now(), "corr-3", "70", 70L, 1L, new BigDecimal("110.00")
+        );
+        ProducerRecord<String, OrderCreatedEvent> record =
+                new ProducerRecord<>("order.created", null, "70", event, headers);
+
+        ProducerRecord<String, OrderCreatedEvent> intercepted = interceptor.onSend(record);
+
+        Header header = intercepted.headers().lastHeader(TraceContextUtils.TRACEPARENT_HEADER);
+        assertNotNull(header);
+        assertEquals(existingTraceparent, new String(header.value(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    @DisplayName("Interceptor replaces malformed or all-zero traceparent header with safe valid fallback")
+    void testReplacesMalformedTraceparent() {
+        RecordHeaders headers = new RecordHeaders();
+        String malformedTraceparent = "00-00000000000000000000000000000000-0000000000000000-01";
+        headers.add(TraceContextUtils.TRACEPARENT_HEADER, malformedTraceparent.getBytes(StandardCharsets.UTF_8));
+
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                "evt-8", "ORDER_CREATED", "1.0", Instant.now(), "corr-4", "80", 80L, 1L, new BigDecimal("120.00")
+        );
+        ProducerRecord<String, OrderCreatedEvent> record =
+                new ProducerRecord<>("order.created", null, "80", event, headers);
+
+        ProducerRecord<String, OrderCreatedEvent> intercepted = interceptor.onSend(record);
+
+        Header header = intercepted.headers().lastHeader(TraceContextUtils.TRACEPARENT_HEADER);
+        assertNotNull(header);
+        String headerValue = new String(header.value(), StandardCharsets.UTF_8);
+        assertTrue(TraceContextUtils.isValidTraceparent(headerValue));
+        assertNotEquals(malformedTraceparent, headerValue);
     }
 
     @Test

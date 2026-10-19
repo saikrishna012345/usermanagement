@@ -491,6 +491,137 @@ LIMIT 50;
 
 ### 9.6 Observability Limitations
 - **Single-Node Actuator Scope:** Spring Boot Actuator endpoints provide process-local health and metrics. In multi-instance deployments, a metric aggregator (e.g. Prometheus + Grafana) is required.
-- **Log Correlation vs. APM Tracing:** Logs correlate across services using `X-Correlation-ID` and MDC, but distributed span timing / dependency graph visualization requires an OpenTelemetry / Zipkin collector.
 - **Outbox Polling Resolution:** The Outbox poller runs at fixed intervals (2000ms), meaning publication latency is bounded by the polling interval rather than real-time CDC.
+
+---
+
+## 10. Distributed Tracing with OpenTelemetry
+
+### 10.1 Trace ID vs. Correlation ID
+Distributed tracing and business correlation serve complementary but distinct operational purposes:
+
+| Aspect | Trace ID (`traceparent`) | Correlation ID (`X-Correlation-ID`) |
+|---|---|---|
+| **Specification** | W3C Trace Context Level 1 (`00-{traceId}-{spanId}-{flags}`) | Custom header (`X-Correlation-ID`, UUID or alphanumeric) |
+| **Purpose** | Measures latency, span timing, service hops, error causality | Groups related logs across services for business request lifecycle |
+| **Generation** | 32-hex characters (`[0-9a-f]{32}`), non-zero | 36-char UUID or custom sanitized string (`^[A-Za-z0-9_-]{1,64}$`) |
+| **Parent/Child** | Hierarchical: each call generates a new `spanId` under `traceId` | Flat: identical correlation ID carried across all downstream hops |
+| **Co-existence in MDC** | `[traceId=%X{traceId:-} spanId=%X{spanId:-}]` | `[corr=%X{correlationId:-} order=%X{orderId:-}]` |
+
+Neither replaces the other; both are populated into MDC and logged side-by-side in all microservices.
+
+### 10.2 OpenTelemetry Instrumentation Architecture
+The backend uses Spring Boot 3.3.2 managed dependencies for application-level distributed tracing:
+- **Tracing Bridge:** `io.micrometer:micrometer-tracing-bridge-otel` (1.3.2)
+- **OTLP Exporter:** `io.opentelemetry:opentelemetry-exporter-otlp` (1.37.0)
+- **OpenFeign Tracing:** `io.github.openfeign:feign-micrometer`
+
+```
+  [ Client ]
+      │ (W3C traceparent / X-Correlation-ID)
+      ▼
+┌───────────────────────────────────────┐
+│              API Gateway              │  (TraceContextGlobalFilter)
+│          (Port 8080 / WebFlux)        │  Mutates downstream request & response
+└──────────────────┬────────────────────┘
+                   │ HTTP / OpenFeign
+                   ▼
+┌───────────────────────────────────────┐
+│             Order Service             │  (TraceContextFilter + FeignInterceptor)
+│              (Port 8083)              │  Propagates traceparent to Product Service
+└───────┬───────────────────────────────┘
+        │                                  │
+        │ OpenFeign PATCH                  │ PostgreSQL ACID Transaction
+        ▼                                  ▼
+┌──────────────────┐             ┌─────────────────────┐
+│  Product Service │             │    outbox_events    │
+│   (Port 8082)    │             └──────────┬──────────┘
+└──────────────────┘                        │ Polling
+                                            ▼
+                                 ┌─────────────────────┐
+                                 │ OutboxEventPublisher│
+                                 └──────────┬──────────┘
+                                            │ Kafka ProducerRecord
+                                            │ (traceparent header)
+                                            ▼
+                                 ┌─────────────────────┐
+                                 │     Kafka Broker    │
+                                 │  topic: order.created│
+                                 └──────────┬──────────┘
+                                            │ Consumer Record
+                                            ▼
+                                 ┌─────────────────────┐
+                                 │  OrderEventConsumer │
+                                 │ (extracts traceId & │
+                                 │ creates consumer    │
+                                 │      span)          │
+                                 └─────────────────────┘
+```
+
+### 10.3 W3C Trace Context Propagation across HTTP & OpenFeign
+1. **API Gateway (`gateway-service`):**
+   - `TraceContextGlobalFilter` intercepts incoming requests.
+   - If incoming `traceparent` is valid, it propagates to the downstream service.
+   - If missing, blank, malformed, or all zeros, `TraceContextUtils.generateTraceparent()` creates a new W3C-compliant trace context (`00-{traceId}-{spanId}-01`).
+   - The response header `traceparent` is returned to the client.
+2. **Order Service (`order-service`):**
+   - `TraceContextFilter` extracts `traceparent` from incoming requests and stores `traceId`, `spanId`, and `traceparent` in SLF4J MDC.
+   - `CorrelationIdFeignInterceptor` reads active trace context from MDC and injects the `traceparent` header into outbound `ProductClient` OpenFeign requests.
+3. **Product Service (`product-service`):**
+   - `TraceContextFilter` accepts the propagated `traceparent`, populates MDC, and echoes the header in the HTTP response.
+
+### 10.4 Kafka Trace Context Propagation
+- **Producer Injection:** `CorrelationIdProducerInterceptor` intercepts every outbound `ProducerRecord<String, OrderCreatedEvent>` and injects the W3C `traceparent` byte header alongside `X-Correlation-ID`. If MDC is empty, a valid trace context is generated.
+- **Consumer Extraction:** `OrderEventConsumer` accepts `@Header(name = "traceparent", required = false) String headerTraceparent`. It resolves and validates the header, extracts `traceId` and `spanId`, sets MDC, and records messaging attributes:
+  - `messaging.system = "kafka"`
+  - `messaging.destination.name = "order.created"`
+  - `messaging.operation = "receive"`
+  - `messaging.kafka.consumer.group = "order-service"`
+  - `event.type = "ORDER_CREATED"`
+  - `order.id = aggregateId` (privacy-safe, low cardinality)
+- **Fault-Tolerance:** Missing, blank, or malformed tracing headers (such as all-zero IDs or CRLF injection) never break consumer event processing; safe fallbacks are generated automatically.
+
+### 10.5 Local Trace Backend (Jaeger)
+Jaeger all-in-one is configured in `docker-compose.yml`:
+- **Image:** `jaegertracing/all-in-one:1.57`
+- **Container Name:** `jaeger`
+- **Web UI URL:** `http://localhost:16686`
+- **OTLP HTTP Endpoint:** `http://localhost:4318/v1/traces` (container DNS: `http://jaeger:4318/v1/traces`)
+
+#### Starting Jaeger:
+```bash
+# Start only the Jaeger tracing backend
+docker compose up -d jaeger
+
+# Or start all infrastructure including Jaeger
+docker compose up -d
+```
+
+#### Inspecting Traces:
+1. Open `http://localhost:16686` in a browser.
+2. Under **Service**, select `order-service`, `gateway-service`, or `product-service`.
+3. Click **Find Traces** to view distributed request timelines and span hierarchies.
+4. Search by Tag: e.g., `messaging.system = kafka` or `http.status_code = 200`.
+
+### 10.6 Trace Attributes & Privacy
+Spans strictly follow OpenTelemetry Semantic Conventions and enforce data privacy:
+- **Permitted Attributes:** `service.name`, `http.method`, `http.route`, `http.status_code`, `messaging.system`, `messaging.destination.name`, `messaging.operation`, `messaging.kafka.consumer.group`, `event.type`, `order.id`.
+- **Prohibited Attributes (Redacted):** Passwords, JWT access/refresh tokens, `Authorization` headers, customer payment credentials, and raw request payloads are never placed in span tags or metrics.
+
+### 10.7 Troubleshooting
+| Symptom | Cause | Solution |
+|---|---|---|
+| Trace broken between Gateway and Order Service | `traceparent` header missing or malformed | Inspect Gateway logs for `Gateway trace: traceId=...`. Verify client did not send all-zero traceId |
+| Feign call has new traceId instead of parent | MDC context lost across asynchronous boundaries | Verify `TraceContextFilter` ran before Feign call and MDC contains `traceparent` |
+| Kafka consumer has new traceId | Record produced without `traceparent` header | Verify `CorrelationIdProducerInterceptor` is registered in `KafkaConfig` producer properties |
+| Connection refused to `http://localhost:4318` | Jaeger container not running | Run `docker compose up -d jaeger`. If Jaeger is down, services drop spans safely without failing business logic |
+
+### 10.8 Implemented vs. Planned Tracing Scope
+- **Implemented:**
+  - Gateway (8080) -> Order Service (8083) -> Product Service (8082) via OpenFeign.
+  - Outbox Event Publisher -> Kafka `order.created` -> `OrderEventConsumer`.
+  - User Service (8081) HTTP trace context extraction and MDC propagation.
+- **Planned / Future Roadmap:**
+  - Notification Service tracing consumer (`notification.requested`).
+  - Analytics Service tracing consumer.
 

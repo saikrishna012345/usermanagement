@@ -1,0 +1,51 @@
+package com.blackroth.training.mobilebackend.util;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TraceContextUtilsTest {
+
+    @Test
+    @DisplayName("Validates compliant W3C traceparent successfully")
+    void testValidTraceparent() {
+        String valid = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        assertTrue(TraceContextUtils.isValidTraceparent(valid));
+        assertEquals(valid, TraceContextUtils.resolveTraceparent(valid));
+        assertEquals("4bf92f3577b34da6a3ce929d0e0e4736", TraceContextUtils.extractTraceId(valid));
+        assertEquals("00f067aa0ba902b7", TraceContextUtils.extractSpanId(valid));
+    }
+
+    @Test
+    @DisplayName("Rejects all-zero traceId and spanId")
+    void testRejectsAllZeroIds() {
+        String zeroTraceId = "00-00000000000000000000000000000000-00f067aa0ba902b7-01";
+        String zeroSpanId = "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01";
+
+        assertFalse(TraceContextUtils.isValidTraceparent(zeroTraceId));
+        assertFalse(TraceContextUtils.isValidTraceparent(zeroSpanId));
+
+        String fallbackTrace = TraceContextUtils.resolveTraceparent(zeroTraceId);
+        assertTrue(TraceContextUtils.isValidTraceparent(fallbackTrace));
+    }
+
+    @Test
+    @DisplayName("Rejects null, blank, and malformed traceparent headers")
+    void testRejectsMalformedHeaders() {
+        assertFalse(TraceContextUtils.isValidTraceparent(null));
+        assertFalse(TraceContextUtils.isValidTraceparent(""));
+        assertFalse(TraceContextUtils.isValidTraceparent("   "));
+        assertFalse(TraceContextUtils.isValidTraceparent("01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"));
+        assertFalse(TraceContextUtils.isValidTraceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7"));
+    }
+
+    @Test
+    @DisplayName("Generates new compliant W3C traceparent")
+    void testGeneratesTraceparent() {
+        String generated = TraceContextUtils.generateTraceparent();
+        assertTrue(TraceContextUtils.isValidTraceparent(generated));
+        assertTrue(generated.startsWith("00-"));
+        assertTrue(generated.endsWith("-01"));
+    }
+}

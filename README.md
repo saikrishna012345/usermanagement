@@ -47,3 +47,12 @@ For order creation, Product Service must be registered/running because Order Ser
 - **Structured Operational Logs:** All event transitions (Outbox publish/retry/failure, Consumer receipt/dedup/success/DLT, DLT replay) output structured fields (`timestamp`, `level`, `service`, `correlationId`, `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset`, `attempt`, `durationMs`, `outcome`).
 - **Health & Actuator Endpoints:** Actuator `/actuator/health` and `/actuator/info` enabled and secured across Gateway (8080), User Service (8081), Product Service (8082), Order Service (8083), and Config Server (8888).
 - **Operational Runbook & Queries:** Schema-accurate PostgreSQL monitoring queries for `outbox_events` (`PENDING` retry queue and `FAILED` terminal errors) and `orders` (`COMPENSATION_PENDING`) documented in [docs/event-driven-architecture.md](file:///docs/event-driven-architecture.md).
+
+## Distributed Tracing with OpenTelemetry
+- **W3C Trace Context Propagation:** Standard `traceparent` headers (`00-{traceId}-{spanId}-{flags}`) validated, generated when missing/malformed, and propagated across API Gateway (8080) -> Order Service (8083) -> Product Service (8082) via OpenFeign, and into Kafka message records for `order.created`.
+- **Distinct from Correlation IDs:** `traceId` tracks distributed latency and spans; `X-Correlation-ID` groups business request logs. Both coexist in MDC (`[traceId=%X{traceId:-} spanId=%X{spanId:-} corr=%X{correlationId:-} order=%X{orderId:-}]`).
+- **Local Trace Backend (Jaeger):**
+  - **Start Jaeger:** `docker compose up -d jaeger`
+  - **Jaeger Web UI:** `http://localhost:16686`
+  - **OTLP HTTP Endpoint:** `http://localhost:4318/v1/traces` (container DNS: `http://jaeger:4318/v1/traces`)
+- **Tracing Tests:** `mvn test -Dtest=TraceContextUtilsTest,TraceContextFilterTest,TraceContextGlobalFilterTest,CorrelationIdFeignInterceptorTest,CorrelationIdProducerInterceptorTest,DistributedTracingTest`
