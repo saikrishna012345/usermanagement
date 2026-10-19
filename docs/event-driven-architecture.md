@@ -327,6 +327,34 @@ Expected test results:
 - `OrderEventConsumerTest`: Validates successful consumption, duplicate event idempotency check, and poison pill rejection.
 - `OutboxEventPublisherTest`: Validates successful outbox publish, broker failure retry/backoff, and max attempt transition to `FAILED`.
 
+### 7.5 End-to-End Event Integration, Deduplication, and Recovery Tests
+Run the comprehensive integration, duplicate delivery, and recovery test suite:
+```powershell
+cd order-service
+mvn test -Dtest=EventIntegrationAndRecoveryTest
+```
+
+Scenarios verified:
+1. **End-to-End Outbox-to-Consumer Lifecycle Flow:**
+   - Outbox event published with synchronous broker ACK; status transitions to `PUBLISHED` with `publishedAt` timestamp.
+   - `OrderEventConsumer` consumes `OrderCreatedEvent` and records `ProcessedEvent(eventId, eventType)`.
+2. **Duplicate Delivery Idempotency:**
+   - Sequential duplicate event delivery is detected via `existsByEventId` and skipped without duplicating database side effects.
+3. **Concurrent Duplicate Delivery Race-Condition Safety:**
+   - Database unique constraint `uk_processed_event_id` on `processed_events(event_id)` prevents concurrent double-insertion.
+4. **Transient Outbox Failure & Recovery:**
+   - Broker failure triggers exponential backoff (`delaySeconds = Math.min(60L, 1L << attempts)`); subsequent publication succeeds and sets `PUBLISHED`.
+5. **Outbox Max Attempts Threshold:**
+   - 5 failed publication attempts transition outbox status to `FAILED` with `lastError` recorded for monitoring.
+6. **Dead-Letter Poison Pill Routing:**
+   - Malformed/non-retryable payload throws `IllegalArgumentException`, bypassing the consumer store and routing to DLT.
+7. **DLT Replay Reprocessing:**
+   - `DltReplayService` successfully replays quarantined events back to `order.created` with `aggregateId` as key.
+8. **Saga Consistency (Reservation Failure):**
+   - Stock reservation failure triggers compensation release and marks order `CANCELLED` with `order.cancelled` outbox event.
+9. **Saga Consistency (Downstream Compensation Failure):**
+   - Failure during compensation release marks order `COMPENSATION_PENDING` for reconciliation.
+
 ---
 
 ## 8. Known Limitations & Architectural Roadmap
@@ -339,3 +367,7 @@ Expected test results:
    - *Target Roadmap:* Introduce Debezium PostgreSQL Change Data Capture (CDC) via Kafka Connect to stream outbox records to Kafka with sub-second latency and zero database polling.
 3. **Schema Registry:**
    - Contracts are currently maintained via Java records and JSON serialization. Production deployments should introduce Confluent Schema Registry with Avro or Protobuf specifications.
+4. **Implemented vs. Planned Consumers:**
+   - *Implemented & Active*: `OrderEventConsumer` in `order-service` actively listens to `order.created` (group: `order-service`).
+   - *Planned Roadmap*: Standalone notification and analytics consumers are planned downstream microservices that will subscribe to `notification.requested`, `order.shipped`, and `order.delivered`.
+

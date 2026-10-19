@@ -40,5 +40,4 @@ For order creation, Product Service must be registered/running because Order Ser
   - Dead-letter topics with suffix `.dlt` (e.g. `order.created.dlt`).
 - **Transaction Guarantee:** Local PostgreSQL ACID transaction inserts into `orders` and `outbox_events` atomically; background `OutboxEventPublisher` delivers at-least-once to Kafka with exponential backoff on broker failure.
 - **Consumer Deduplication:** Consumers enforce idempotency by recording and checking `eventId` in `processed_events`.
-- **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest` inside `order-service`.
-
+- **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest,EventIntegrationAndRecoveryTest` inside `order-service`.
