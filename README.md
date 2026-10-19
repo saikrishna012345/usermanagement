@@ -66,3 +66,17 @@ For order creation, Product Service must be registered/running because Order Ser
 - **Resilience Test Suite:**
   - `mvn test -Dtest=OpenFeignResilienceTest,KafkaOutboxResilienceTest,ConsumerResilienceTest,SagaCompensationResilienceTest,ResilienceObservabilityTest -pl order-service`
   - `mvn test -Dtest=ProductReservationChaosTest -pl product-service`
+
+## Security Hardening & API Access Control
+- **JWT Cryptographic Verification & Fail-Closed Validation:** Configured with HMAC-SHA256 (`app.jwt.secret`) across API Gateway and microservices. Rejects missing, malformed, expired, tampered, or algorithm-manipulated tokens with HTTP 401 Unauthorized (`ApiResponse` standard schema). Missing required claims (`sub`, `role`) or invalid numeric claims fail closed without throwing unhandled HTTP 500 exceptions.
+- **Gateway Identity Sanitization & Anti-Spoofing:** `JwtGatewayFilter` strips client-supplied `X-User-Email`, `X-User-Role`, and `X-User-Id` headers from every incoming request, eliminating header spoofing vulnerabilities on both public and protected routes. Sanitized headers are populated only after cryptographically verifying the JWT signature.
+- **Role-Based Access Control (RBAC):** Consistent role normalization (`ADMIN`, `ROLE_ADMIN` -> `ROLE_ADMIN`; `USER`, `ROLE_USER` -> `ROLE_USER`). Non-admin users cannot access administrative endpoints (`/actuator/**`, `/api/v1/users`, `/api/v1/users/admin`, `/api/v1/orders/{id}/ship`, `/api/v1/orders/{id}/deliver`).
+- **Resource Ownership & Anti-Privilege Escalation:** `UserSecurity` enforces that regular users can only read or update their own profile (`GET/PUT /api/v1/users/{id}` or `/me`). Non-admins are prevented from altering the `role` field.
+- **Order State Machine Protection:** Administrative shipping (`PATCH /api/v1/orders/{id}/ship`) and delivery (`PATCH /api/v1/orders/{id}/deliver`) strictly enforce both `ROLE_ADMIN` authority and order lifecycle preconditions (`CONFIRMED -> SHIPPED` and `SHIPPED -> DELIVERED`). Invalid transitions are rejected with `BusinessException` (HTTP 409/400).
+- **CORS, CSRF & HTTP Headers:** CSRF is safely disabled for stateless Bearer token authentication. CORS is hardened with `allowCredentials(false)` to prevent wildcard credential leakage, alongside Spring Security HTTP headers (`nosniff`, `DENY`).
+- **Comprehensive Documentation:** Detailed security specification and endpoint access matrix documented in [docs/security.md](file:///docs/security.md).
+- **Security Test Suites:**
+  - `mvn test -Dtest=JwtGatewaySecurityTest -pl gateway-service`
+  - `mvn test -Dtest=JwtValidationAndRbacSecurityTest -pl user-service`
+  - `mvn test -Dtest=ProductSecurityTest -pl product-service`
+  - `mvn test -Dtest=OrderSecurityAndAccessControlTest -pl order-service`
