@@ -33,6 +33,22 @@ public record EventEnvelope<T>(
         );
     }
 
+    public boolean isSupportedEventType() {
+        return EventTypes.isKnownEventType(this.eventType);
+    }
+
+    public boolean isCompatibleSchemaVersion(String expectedMajorVersion) {
+        if (schemaVersion == null || schemaVersion.isBlank() || expectedMajorVersion == null) {
+            return false;
+        }
+        String major = schemaVersion.split("\\.")[0].trim();
+        return major.equals(expectedMajorVersion.trim());
+    }
+
+    public boolean isSupportedSchemaVersion() {
+        return isCompatibleSchemaVersion("1");
+    }
+
     public void validate() {
         if (eventId == null || eventId.isBlank()) {
             throw new IllegalArgumentException("eventId is required and cannot be blank");
@@ -51,6 +67,14 @@ public record EventEnvelope<T>(
         }
         if (payload == null) {
             throw new IllegalArgumentException("payload is required and cannot be null");
+        }
+    }
+
+    public void validateWithVersion(String expectedMajorVersion) {
+        validate();
+        if (expectedMajorVersion != null && !isCompatibleSchemaVersion(expectedMajorVersion)) {
+            throw new IllegalArgumentException("Unsupported schema version: " + schemaVersion
+                    + ". Expected major version: " + expectedMajorVersion);
         }
     }
 }

@@ -37,8 +37,9 @@ For order creation, Product Service must be registered/running because Order Ser
   - `order.created`, `order.cancelled`, `order.shipped`, `order.delivered` (partition key: `orderId`).
   - `inventory.updated` (partition key: `productId`).
   - `notification.requested` (partition key: `recipientUserId`).
-  - Dead-letter topics with suffix `.dlt` (e.g. `order.created.dlt`).
-- **Transaction Guarantee:** Local PostgreSQL ACID transaction inserts into `orders` and `outbox_events` atomically; background `OutboxEventPublisher` delivers at-least-once to Kafka with exponential backoff on broker failure.
+  - Dead-letter topics with suffix `.dlt` (e.g. `order.created.dlt`, `order.cancelled.dlt`, `order.shipped.dlt`, `order.delivered.dlt`).
+- **Producer Reliability:** Configured with `enable.idempotence = true`, `acks = all`, `retries = 3`, and `max.in.flight.requests.per.connection = 5`.
+- **Transaction Guarantee:** Local PostgreSQL ACID transaction inserts into `orders` and `outbox_events` atomically; background `OutboxEventPublisher` delivers at-least-once to Kafka with exponential backoff on broker failure and optimistic locking concurrency coordination (`@Version`).
 - **Consumer Deduplication:** Consumers enforce idempotency by recording and checking `eventId` in `processed_events`.
 - **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest,EventIntegrationAndRecoveryTest,DltReplayServiceTest,CorrelationIdUtilsTest,CorrelationIdFilterTest,CorrelationIdProducerInterceptorTest` inside `order-service`.
 
@@ -57,14 +58,19 @@ For order creation, Product Service must be registered/running because Order Ser
   - **OTLP HTTP Endpoint:** `http://localhost:4318/v1/traces` (container DNS: `http://jaeger:4318/v1/traces`)
 - **Tracing Tests:** `mvn test -Dtest=TraceContextUtilsTest,TraceContextFilterTest,TraceContextGlobalFilterTest,CorrelationIdFeignInterceptorTest,CorrelationIdProducerInterceptorTest,DistributedTracingTest`
 
-## Resilience Testing & Chaos Recovery
+## Resilience Testing, Chaos Recovery & Saga Orchestration
 - **OpenFeign Failures & Timeouts:** Connect timeout (2s) and read timeout (5s) enforce bounded calls. `ProductClientFallbackFactory` maps downstream 404 to `ResourceNotFoundException`, 400/409 to `BusinessException`, and 503/timeouts/circuit breaker rejections to `ProductServiceUnavailableException` without ever fabricating false success or pretending stock was reserved.
 - **Circuit Breaker Transitions & Bounded Retries:** Resilience4j circuit breaker on `product-service` triggers `OPEN` state after $\ge 50\%$ failure rate over 10 calls, fast-rejecting with `CallNotPermittedException` for 10s, transitioning to `HALF_OPEN` for 2 probe calls, and automatically recovering to `CLOSED`. Bounded retries limit execution to 3 attempts.
 - **Transactional Outbox Recovery:** Kafka outages cause events to remain `PENDING` with exponential backoff ($\min(60, 2^{\text{attempts}})$). When the broker recovers, the publisher resumes and transitions records to `PUBLISHED`. Terminal failures after 5 attempts transition to `FAILED` with sanitized error details (`password=***`, `token=***`).
 - **Consumer Idempotency & DLT Routing:** `OrderEventConsumer` enforces deduplication via `processed_events`. Duplicate events are skipped (`SKIPPED_DUPLICATE`). Fatal non-retryable exceptions (`IllegalArgumentException`, `DeserializationException`) route immediately to `order.created.dlt`. Transient failures retry 3 times with `FixedBackOff(2000L, 3L)`. `DltReplayService` enables safe replay preserving partition keys and correlation IDs.
-- **Saga Consistency & Compensation:** When reservation or payment fails, `OrderService` executes compensating release calls on all reserved items. If all releases succeed, the order transitions to `CANCELLED` and publishes `ORDER_CANCELLED`. If any release fails, the order transitions to `COMPENSATION_PENDING` (no cancellation event emitted), isolating the failure for operational investigation.
-- **Resilience Test Suite:**
-  - `mvn test -Dtest=OpenFeignResilienceTest,KafkaOutboxResilienceTest,ConsumerResilienceTest,SagaCompensationResilienceTest,ResilienceObservabilityTest -pl order-service`
+- **Saga Consistency, Compensation & Recovery:**
+  - Order workflow: `PENDING -> Stock Reserved -> Payment Authorized -> Stock Committed -> CONFIRMED`.
+  - When reservation or payment fails, compensating release calls run on all reserved items. If all succeed, the order transitions to `CANCELLED` (emitting `ORDER_CANCELLED` to Outbox).
+  - If downstream compensation fails/times out, the order transitions to `COMPENSATION_PENDING` (no cancellation event emitted), isolating the order.
+  - Across application restarts, `SagaCompensationRecoveryService` polls `COMPENSATION_PENDING` orders, retries `releaseReservation`, and upon success transitions the order to `CANCELLED` and writes the `ORDER_CANCELLED` outbox event.
+  - Defends against late confirmation events and guarantees repeated compensation idempotency.
+- **Resilience & Saga Test Suite:**
+  - `mvn test -Dtest=OpenFeignResilienceTest,KafkaOutboxResilienceTest,ConsumerResilienceTest,SagaCompensationResilienceTest,SagaRecoveryAndStateTransitionTest,ResilienceObservabilityTest -pl order-service`
   - `mvn test -Dtest=ProductReservationChaosTest -pl product-service`
 
 ## Security Hardening & API Access Control

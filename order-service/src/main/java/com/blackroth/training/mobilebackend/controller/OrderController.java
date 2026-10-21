@@ -60,4 +60,16 @@ public class OrderController {
     public ResponseEntity<ApiResponse<List<OrderResponse>>> byUser(@PathVariable Long userId) {
         return ResponseEntity.ok(ApiResponse.success("Orders fetched successfully", service.getOrdersByUser(userId)));
     }
+
+    @PatchMapping("/{id}/ship")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> ship(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Order shipped successfully", service.shipOrder(id)));
+    }
+
+    @PatchMapping("/{id}/deliver")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> deliver(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Order delivered successfully", service.deliverOrder(id)));
+    }
 }

@@ -216,4 +216,76 @@ class EventEnvelopeContractTest {
                 null, "EMAIL", "ORDER_CONFIRMATION", "1", "Subject", "user@test.com");
         assertThrows(IllegalArgumentException.class, invalidNotif::validate);
     }
+
+    @Test
+    @DisplayName("Schema version compatibility rules enforce major version matching")
+    void testSchemaVersionCompatibilityRules() {
+        EventEnvelope<String> v1Envelope = new EventEnvelope<>(
+                "id-v1", EventTypes.ORDER_CREATED, "1.0", Instant.now(), "c-1", "1", "payload");
+        assertTrue(v1Envelope.isCompatibleSchemaVersion("1"));
+        assertTrue(v1Envelope.isSupportedSchemaVersion());
+        assertFalse(v1Envelope.isCompatibleSchemaVersion("2"));
+        assertDoesNotThrow(() -> v1Envelope.validateWithVersion("1"));
+
+        EventEnvelope<String> v1MinorEnvelope = new EventEnvelope<>(
+                "id-v1.2", EventTypes.ORDER_CREATED, "1.2", Instant.now(), "c-1", "1", "payload");
+        assertTrue(v1MinorEnvelope.isCompatibleSchemaVersion("1"));
+        assertDoesNotThrow(() -> v1MinorEnvelope.validateWithVersion("1"));
+
+        EventEnvelope<String> v2Envelope = new EventEnvelope<>(
+                "id-v2", EventTypes.ORDER_CREATED, "2.0", Instant.now(), "c-2", "2", "payload");
+        assertFalse(v2Envelope.isCompatibleSchemaVersion("1"));
+        assertFalse(v2Envelope.isSupportedSchemaVersion());
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> v2Envelope.validateWithVersion("1"));
+        assertTrue(ex.getMessage().contains("Unsupported schema version: 2.0"));
+
+        EventEnvelope<String> nullVersionEnvelope = new EventEnvelope<>(
+                "id-null", EventTypes.ORDER_CREATED, null, Instant.now(), "c-3", "3", "payload");
+        assertFalse(nullVersionEnvelope.isCompatibleSchemaVersion("1"));
+    }
+
+    @Test
+    @DisplayName("Event types validation identifies known and unsupported event types")
+    void testEventTypeValidationRules() {
+        assertTrue(EventTypes.isKnownEventType(EventTypes.ORDER_CREATED));
+        assertTrue(EventTypes.isKnownEventType(EventTypes.ORDER_CANCELLED));
+        assertTrue(EventTypes.isKnownEventType(EventTypes.ORDER_SHIPPED));
+        assertTrue(EventTypes.isKnownEventType(EventTypes.ORDER_DELIVERED));
+        assertTrue(EventTypes.isKnownEventType(EventTypes.INVENTORY_UPDATED));
+        assertTrue(EventTypes.isKnownEventType(EventTypes.NOTIFICATION_REQUESTED));
+
+        assertFalse(EventTypes.isKnownEventType(null));
+        assertFalse(EventTypes.isKnownEventType("   "));
+        assertFalse(EventTypes.isKnownEventType("UNKNOWN_CUSTOM_EVENT"));
+
+        EventEnvelope<String> validEvent = EventEnvelope.create(
+                EventTypes.ORDER_CREATED, "corr", "1", "data");
+        assertTrue(validEvent.isSupportedEventType());
+
+        EventEnvelope<String> unknownEvent = EventEnvelope.create(
+                "PAYMENT_AUTHORIZED_LEGACY", "corr", "1", "data");
+        assertFalse(unknownEvent.isSupportedEventType());
+    }
+
+    @Test
+    @DisplayName("Malformed JSON payload syntax throws JsonProcessingException")
+    void testMalformedJsonPayloadHandling() {
+        String malformedJson = "{ \"eventId\": \"evt-broken\", \"eventType\": \"ORDER_CREATED\", \"payload\": ";
+        assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class, () ->
+                objectMapper.readValue(malformedJson, new TypeReference<EventEnvelope<OrderEventPayload>>() {}));
+
+        String invalidTypeJson = """
+                {
+                    "eventId": "evt-type-mismatch",
+                    "eventType": "ORDER_CREATED",
+                    "schemaVersion": "1.0",
+                    "occurredAt": "not-a-valid-timestamp",
+                    "correlationId": "corr",
+                    "aggregateId": "1",
+                    "payload": { "orderId": "not-a-number" }
+                }
+                """;
+        assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class, () ->
+                objectMapper.readValue(invalidTypeJson, new TypeReference<EventEnvelope<OrderEventPayload>>() {}));
+    }
 }

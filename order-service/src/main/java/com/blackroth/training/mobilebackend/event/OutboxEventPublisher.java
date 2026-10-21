@@ -144,6 +144,8 @@ public class OutboxEventPublisher {
                         event.getEventId(), event.getEventType(), event.getTopic(), event.getAggregateId(), durationMs, traceId);
             }
 
+        } catch (org.springframework.dao.OptimisticLockingFailureException | jakarta.persistence.OptimisticLockException lockEx) {
+            log.info("Outbox event already updated by concurrent publisher instance: eventId={}, skipping redundant write", event.getEventId());
         } catch (Exception exception) {
             long durationMs = System.currentTimeMillis() - startTime;
             int attempts = event.getAttempts() + 1;

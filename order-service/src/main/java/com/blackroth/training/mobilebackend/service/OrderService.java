@@ -35,8 +35,8 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderService.class);
-    private static final String ORDER_CREATED_TOPIC = "order.created";
-    private static final String ORDER_CANCELLED_TOPIC = "order.cancelled";
+    private static final String ORDER_CREATED_TOPIC = com.blackroth.training.mobilebackend.event.contract.TopicNames.ORDER_CREATED;
+    private static final String ORDER_CANCELLED_TOPIC = com.blackroth.training.mobilebackend.event.contract.TopicNames.ORDER_CANCELLED;
 
     private final OrderRepository orderRepository;
     private final ProductClient productClient;
@@ -279,6 +279,46 @@ public class OrderService {
         Order cancelledOrder = orderStateService.markCancelled(id);
 
         return toResponse(cancelledOrder);
+    }
+
+    @Transactional
+    public OrderResponse shipOrder(Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Order not found with id: " + id
+                        )
+                );
+
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new BusinessException(
+                    "Cannot ship order with status: " + order.getStatus()
+                            + ". Only CONFIRMED orders can transition to SHIPPED"
+            );
+        }
+
+        Order shippedOrder = orderStateService.markShipped(id);
+        return toResponse(shippedOrder);
+    }
+
+    @Transactional
+    public OrderResponse deliverOrder(Long id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Order not found with id: " + id
+                        )
+                );
+
+        if (order.getStatus() != OrderStatus.SHIPPED) {
+            throw new BusinessException(
+                    "Cannot deliver order with status: " + order.getStatus()
+                            + ". Only SHIPPED orders can transition to DELIVERED"
+            );
+        }
+
+        Order deliveredOrder = orderStateService.markDelivered(id);
+        return toResponse(deliveredOrder);
     }
 
     private void saveOutboxEvent(

@@ -13,8 +13,16 @@ import java.util.*;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiResponse<Object>> notFound(ResourceNotFoundException e) {
+        return build(e.getMessage(), "RESOURCE_NOT_FOUND", HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNoResourceFound(
+            org.springframework.web.servlet.resource.NoResourceFoundException e) {
         return build(e.getMessage(), "RESOURCE_NOT_FOUND", HttpStatus.NOT_FOUND);
     }
 
@@ -44,9 +52,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> generic(Exception e) {
-
-        e.printStackTrace();
-
+        log.error("Unhandled server exception: ", e);
         return build(
                 "Something went wrong. Please try again later.",
                 "INTERNAL_SERVER_ERROR",

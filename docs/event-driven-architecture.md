@@ -755,6 +755,26 @@ The Order creation Saga coordinates between `order-service` and `product-service
 - **`CANCELLED`:** Payment failed or reservation timed out, **AND** all reservations were successfully released back to inventory. `ORDER_CANCELLED` event inserted into Outbox.
 - **`COMPENSATION_PENDING`:** Payment failed or reservation timed out, **BUT** releasing one or more inventory reservations failed (e.g. downstream product-service unavailable). No `ORDER_CANCELLED` event is published. The order is quarantined in `COMPENSATION_PENDING` to prevent phantom stock and alert operations.
 
+#### Saga State Transitions & Legal Transitions Matrix:
+| From State | Event / Trigger | Target State | Outbox Event Generated | Idempotent / Failure Handling |
+|---|---|---|---|---|
+| `PENDING` | Stock Reserved + Payment Authorized + Stock Committed | `CONFIRMED` | `ORDER_CREATED` (`order.created`) | Calling on already `CONFIRMED` order is safe no-op. |
+| `PENDING` | Reservation or Payment Failed (All compensations succeeded) | `CANCELLED` | `ORDER_CANCELLED` (`order.cancelled`) | Calling on already `CANCELLED` order is safe no-op. |
+| `PENDING` | Reservation or Payment Failed (Downstream release timed out/failed) | `COMPENSATION_PENDING` | None (Isolated from pub/sub) | Quarantined; prevents phantom stock. |
+| `COMPENSATION_PENDING` | `SagaCompensationRecoveryService` retry succeeds | `CANCELLED` | `ORDER_CANCELLED` (`order.cancelled`) | Automatic recovery across app restarts. |
+| `CONFIRMED` | Dispatch by Admin | `SHIPPED` | `ORDER_SHIPPED` (`order.shipped`) | Only `CONFIRMED` orders can be shipped. |
+| `SHIPPED` | Customer Delivery Confirmed | `DELIVERED` | `ORDER_DELIVERED` (`order.delivered`) | Terminal state. |
+| `CANCELLED` | Late confirmation attempt (e.g. timeout race condition) | Rejection | None | Throws `BusinessException`; prevents state corruption. |
+
+#### Automated Saga Restart Recovery (`SagaCompensationRecoveryService`):
+- Across service restarts or prolonged downstream outages, orders in `COMPENSATION_PENDING` are persisted durably in PostgreSQL.
+- `SagaCompensationRecoveryService` runs on a scheduled interval (`saga.recovery.fixed-delay-ms=10000`, default 10s):
+  1. Queries all orders with `status = 'COMPENSATION_PENDING'` via `orderRepository.findByStatus(...)`.
+  2. For each order item, calls `productClient.releaseReservation(productId, orderId)`.
+  3. If release returns HTTP 404 / `ResourceNotFoundException`, it is treated as already released (idempotent).
+  4. If all items succeed, transitions order to `CANCELLED` via `orderStateService.markCancelled(...)`, safely emitting `ORDER_CANCELLED` to the Outbox.
+  5. If release still fails (e.g. downstream service still unreachable), logs a warning and leaves the order in `COMPENSATION_PENDING` for the subsequent poll.
+
 ---
 
 ### 11.5 Operational Runbook and Inspection Commands
