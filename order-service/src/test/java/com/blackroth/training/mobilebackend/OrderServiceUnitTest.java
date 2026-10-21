@@ -312,4 +312,150 @@ class OrderServiceUnitTest {
         verify(orderStateService).markCancelled(300L);
         verify(orderStateService, never()).markCompensationPending(300L);
     }
+
+    private Order createMockOrder(Long id, OrderStatus status) throws Exception {
+        Order order = new Order(1L, status, BigDecimal.valueOf(100));
+        Field idField = Order.class.getDeclaredField("id");
+        idField.setAccessible(true);
+        idField.set(order, id);
+        return order;
+    }
+
+    @Test
+    void shipOrder_fromConfirmed_succeeds() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order confirmedOrder = createMockOrder(10L, OrderStatus.CONFIRMED);
+        Order shippedOrder = createMockOrder(10L, OrderStatus.SHIPPED);
+
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(confirmedOrder));
+        when(orderStateService.markShipped(10L)).thenReturn(shippedOrder);
+
+        OrderResponse response = service.shipOrder(10L);
+
+        assertEquals(OrderStatus.SHIPPED, response.getStatus());
+        verify(orderStateService).markShipped(10L);
+    }
+
+    @Test
+    void deliverOrder_fromShipped_succeeds() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order shippedOrder = createMockOrder(10L, OrderStatus.SHIPPED);
+        Order deliveredOrder = createMockOrder(10L, OrderStatus.DELIVERED);
+
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(shippedOrder));
+        when(orderStateService.markDelivered(10L)).thenReturn(deliveredOrder);
+
+        OrderResponse response = service.deliverOrder(10L);
+
+        assertEquals(OrderStatus.DELIVERED, response.getStatus());
+        verify(orderStateService).markDelivered(10L);
+    }
+
+    @Test
+    void shipOrder_fromPending_rejectedWithConflict() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order pendingOrder = createMockOrder(10L, OrderStatus.PENDING);
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(pendingOrder));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.shipOrder(10L));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("Only CONFIRMED orders can transition to SHIPPED"));
+        verify(orderStateService, never()).markShipped(any());
+    }
+
+    @Test
+    void deliverOrder_fromConfirmed_rejectedWithConflict() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order confirmedOrder = createMockOrder(10L, OrderStatus.CONFIRMED);
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(confirmedOrder));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.deliverOrder(10L));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("Only SHIPPED orders can transition to DELIVERED"));
+        verify(orderStateService, never()).markDelivered(any());
+    }
+
+    @Test
+    void shipOrder_fromCancelled_rejectedWithConflict() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order cancelledOrder = createMockOrder(10L, OrderStatus.CANCELLED);
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(cancelledOrder));
+
+        assertThrows(BusinessException.class, () -> service.shipOrder(10L));
+        verify(orderStateService, never()).markShipped(any());
+    }
+
+    @Test
+    void shipOrder_fromCompensationPending_rejectedWithConflict() throws Exception {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        Order compOrder = createMockOrder(10L, OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findById(10L)).thenReturn(java.util.Optional.of(compOrder));
+
+        assertThrows(BusinessException.class, () -> service.shipOrder(10L));
+        verify(orderStateService, never()).markShipped(any());
+    }
+
+    @Test
+    void shipOrder_missingOrder_throwsResourceNotFound() {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        when(orderRepository.findById(999L)).thenReturn(java.util.Optional.empty());
+
+        assertThrows(com.blackroth.training.mobilebackend.exception.ResourceNotFoundException.class,
+                () -> service.shipOrder(999L));
+    }
+
+    @Test
+    void deliverOrder_missingOrder_throwsResourceNotFound() {
+        OrderRepository orderRepository = mock(OrderRepository.class);
+        OrderStateService orderStateService = mock(OrderStateService.class);
+        OrderService service = new OrderService(
+                orderRepository, mock(ProductClient.class), mock(OutboxEventRepository.class),
+                new ObjectMapper(), orderStateService, mock(PaymentAuthorizationService.class)
+        );
+
+        when(orderRepository.findById(999L)).thenReturn(java.util.Optional.empty());
+
+        assertThrows(com.blackroth.training.mobilebackend.exception.ResourceNotFoundException.class,
+                () -> service.deliverOrder(999L));
+    }
 }

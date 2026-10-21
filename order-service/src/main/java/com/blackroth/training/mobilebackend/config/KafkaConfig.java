@@ -2,6 +2,7 @@
 package com.blackroth.training.mobilebackend.config;
 
 import com.blackroth.training.mobilebackend.event.OrderCreatedEvent;
+import com.blackroth.training.mobilebackend.event.contract.TopicNames;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -50,6 +51,12 @@ public class KafkaConfig {
                 CorrelationIdProducerInterceptor.class.getName()
         );
 
+        // Producer reliability, idempotence, and bounded retries
+        config.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+        config.put(ProducerConfig.ACKS_CONFIG, "all");
+        config.put(ProducerConfig.RETRIES_CONFIG, 3);
+        config.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+
         return new DefaultKafkaProducerFactory<>(config);
     }
 
@@ -60,7 +67,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderCreatedTopic() {
-        return TopicBuilder.name("order.created")
+        return TopicBuilder.name(TopicNames.ORDER_CREATED)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -68,7 +75,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderCancelledTopic() {
-        return TopicBuilder.name("order.cancelled")
+        return TopicBuilder.name(TopicNames.ORDER_CANCELLED)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -76,7 +83,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderCreatedDltTopic() {
-        return TopicBuilder.name("order.created.dlt")
+        return TopicBuilder.name(TopicNames.ORDER_CREATED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -84,7 +91,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderCancelledDltTopic() {
-        return TopicBuilder.name("order.cancelled.dlt")
+        return TopicBuilder.name(TopicNames.ORDER_CANCELLED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -92,7 +99,15 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderShippedTopic() {
-        return TopicBuilder.name("order.shipped")
+        return TopicBuilder.name(TopicNames.ORDER_SHIPPED)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic orderShippedDltTopic() {
+        return TopicBuilder.name(TopicNames.ORDER_SHIPPED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -100,7 +115,15 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic orderDeliveredTopic() {
-        return TopicBuilder.name("order.delivered")
+        return TopicBuilder.name(TopicNames.ORDER_DELIVERED)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic orderDeliveredDltTopic() {
+        return TopicBuilder.name(TopicNames.ORDER_DELIVERED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -108,7 +131,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic inventoryUpdatedTopic() {
-        return TopicBuilder.name("inventory.updated")
+        return TopicBuilder.name(TopicNames.INVENTORY_UPDATED)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -116,7 +139,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic inventoryUpdatedDltTopic() {
-        return TopicBuilder.name("inventory.updated.dlt")
+        return TopicBuilder.name(TopicNames.INVENTORY_UPDATED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -124,7 +147,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic notificationRequestedTopic() {
-        return TopicBuilder.name("notification.requested")
+        return TopicBuilder.name(TopicNames.NOTIFICATION_REQUESTED)
                 .partitions(1)
                 .replicas(1)
                 .build();
@@ -132,7 +155,7 @@ public class KafkaConfig {
 
     @Bean
     public NewTopic notificationRequestedDltTopic() {
-        return TopicBuilder.name("notification.requested.dlt")
+        return TopicBuilder.name(TopicNames.NOTIFICATION_REQUESTED_DLT)
                 .partitions(1)
                 .replicas(1)
                 .build();

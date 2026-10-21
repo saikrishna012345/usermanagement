@@ -1,6 +1,9 @@
 package com.blackroth.training.mobilebackend.service;
 
 import com.blackroth.training.mobilebackend.event.OrderCreatedEvent;
+import com.blackroth.training.mobilebackend.event.contract.EventTypes;
+import com.blackroth.training.mobilebackend.event.contract.TopicNames;
+import com.blackroth.training.mobilebackend.exception.BusinessException;
 import com.blackroth.training.mobilebackend.exception.ResourceNotFoundException;
 import com.blackroth.training.mobilebackend.model.Order;
 import com.blackroth.training.mobilebackend.model.OrderStatus;
@@ -42,15 +45,36 @@ public class OrderStateService {
     @Transactional
     public Order markConfirmed(Long orderId) {
         Order order = getOrder(orderId);
+        if (order.getStatus() == OrderStatus.CONFIRMED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new BusinessException(
+                    "Illegal state transition: cannot confirm order with status "
+                            + order.getStatus() + ". Only PENDING orders can transition to CONFIRMED"
+            );
+        }
         order.setStatus(OrderStatus.CONFIRMED);
         Order savedOrder = orderRepository.saveAndFlush(order);
-        saveOutboxEvent(savedOrder, "ORDER_CREATED", "order.created");
+        saveOutboxEvent(savedOrder, EventTypes.ORDER_CREATED, TopicNames.ORDER_CREATED);
         return savedOrder;
     }
 
     @Transactional
     public Order markCompensationPending(Long orderId) {
         Order order = getOrder(orderId);
+        if (order.getStatus() == OrderStatus.COMPENSATION_PENDING) {
+            return order;
+        }
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.PENDING) {
+            throw new BusinessException(
+                    "Illegal state transition: cannot mark compensation pending for order with status "
+                            + order.getStatus()
+            );
+        }
         order.setStatus(OrderStatus.COMPENSATION_PENDING);
         return orderRepository.saveAndFlush(order);
     }
@@ -58,9 +82,55 @@ public class OrderStateService {
     @Transactional
     public Order markCancelled(Long orderId) {
         Order order = getOrder(orderId);
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.PENDING
+                && order.getStatus() != OrderStatus.COMPENSATION_PENDING) {
+            throw new BusinessException(
+                    "Illegal state transition: cannot cancel order with status "
+                            + order.getStatus() + ". Only PENDING or COMPENSATION_PENDING orders can be cancelled"
+            );
+        }
         order.setStatus(OrderStatus.CANCELLED);
         Order savedOrder = orderRepository.saveAndFlush(order);
-        saveOutboxEvent(savedOrder, "ORDER_CANCELLED", "order.cancelled");
+        saveOutboxEvent(savedOrder, EventTypes.ORDER_CANCELLED, TopicNames.ORDER_CANCELLED);
+        return savedOrder;
+    }
+
+    @Transactional
+    public Order markShipped(Long orderId) {
+        Order order = getOrder(orderId);
+        if (order.getStatus() == OrderStatus.SHIPPED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new BusinessException(
+                    "Cannot ship order with status: " + order.getStatus()
+                            + ". Only CONFIRMED orders can transition to SHIPPED"
+            );
+        }
+        order.setStatus(OrderStatus.SHIPPED);
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        saveOutboxEvent(savedOrder, EventTypes.ORDER_SHIPPED, TopicNames.ORDER_SHIPPED);
+        return savedOrder;
+    }
+
+    @Transactional
+    public Order markDelivered(Long orderId) {
+        Order order = getOrder(orderId);
+        if (order.getStatus() == OrderStatus.DELIVERED) {
+            return order;
+        }
+        if (order.getStatus() != OrderStatus.SHIPPED) {
+            throw new BusinessException(
+                    "Cannot deliver order with status: " + order.getStatus()
+                            + ". Only SHIPPED orders can transition to DELIVERED"
+            );
+        }
+        order.setStatus(OrderStatus.DELIVERED);
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        saveOutboxEvent(savedOrder, EventTypes.ORDER_DELIVERED, TopicNames.ORDER_DELIVERED);
         return savedOrder;
     }
 
@@ -115,4 +185,4 @@ public class OrderStateService {
                         )
                 );
     }
-}
+}
