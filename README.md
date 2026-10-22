@@ -43,11 +43,53 @@ For order creation, Product Service must be registered/running because Order Ser
 - **Consumer Deduplication:** Consumers enforce idempotency by recording and checking `eventId` in `processed_events`.
 - **Run Event Tests:** `mvn test -Dtest=EventEnvelopeContractTest,OrderCreatedEventContractTest,OrderEventConsumerTest,OutboxEventPublisherTest,EventIntegrationAndRecoveryTest,DltReplayServiceTest,CorrelationIdUtilsTest,CorrelationIdFilterTest,CorrelationIdProducerInterceptorTest` inside `order-service`.
 
-## Observability & Operational Monitoring
-- **Correlation ID Propagation:** `X-Correlation-ID` header validated and sanitized (`^[A-Za-z0-9_-]{1,64}$` with secure UUID fallback) at Gateway, propagated to SLF4J MDC in all services, forwarded over OpenFeign inter-service calls, and attached to Kafka message headers via `CorrelationIdProducerInterceptor`.
-- **Structured Operational Logs:** All event transitions (Outbox publish/retry/failure, Consumer receipt/dedup/success/DLT, DLT replay) output structured fields (`timestamp`, `level`, `service`, `correlationId`, `eventId`, `eventType`, `orderId`, `topic`, `partition`, `offset`, `attempt`, `durationMs`, `outcome`).
-- **Health & Actuator Endpoints:** Actuator `/actuator/health` and `/actuator/info` enabled and secured across Gateway (8080), User Service (8081), Product Service (8082), Order Service (8083), and Config Server (8888).
-- **Operational Runbook & Queries:** Schema-accurate PostgreSQL monitoring queries for `outbox_events` (`PENDING` retry queue and `FAILED` terminal errors) and `orders` (`COMPENSATION_PENDING`) documented in [docs/event-driven-architecture.md](file:///docs/event-driven-architecture.md).
+## Observability, Metrics & Event Operations
+- **Comprehensive Runbooks & Event Operations:** Full operational documentation, incident runbooks, and failure-injection trace evidence are documented in [docs/event-operations.md](file:///docs/event-operations.md).
+- **Correlation ID Propagation & Sanitization:**
+  - `X-Correlation-ID` header validated and sanitized against `^[A-Za-z0-9_-]{1,64}$` with secure UUID fallback at API Gateway (`CorrelationIdGlobalFilter`).
+  - Populated in SLF4J MDC (`correlationId`) across all services (`CorrelationIdFilter`).
+  - Forwarded on all outbound OpenFeign requests (`CorrelationIdFeignInterceptor`).
+  - Persisted inside outbox event payloads and attached to Kafka message headers via `CorrelationIdProducerInterceptor` and `OutboxEventPublisher`.
+  - Extracted and populated in consumer thread MDC (`OrderEventConsumer`), ensuring unbroken trace correlation across HTTP, database, and Kafka boundaries.
+- **Structured Operational Logging:**
+  - Standardized console pattern incorporating `traceId`, `spanId`, `correlationId`, and `orderId` in MDC.
+  - Standard structured fields: `timestamp`, `level`, `service`, `correlationId`, `traceId`, `spanId`, `orderId`, `eventId`, `eventType`, `topic`, `partition`, `offset`, `attempt`, `durationMs`, `outcome`.
+  - Standardized outcome catalog: `ORDER_CREATED`, `ORDER_CONFIRMED`, `ORDER_CANCELLED`, `ORDER_SHIPPED`, `ORDER_DELIVERED`, `OUTBOX_SAVED`, `PUBLISHED`, `RETRY_SCHEDULED`, `FAILED`, `RESERVED`, `ALREADY_RESERVED`, `RELEASED`, `ALREADY_RELEASED`, `COMMITTED`, `ALREADY_COMMITTED`, `INSUFFICIENT_STOCK`, `RECEIVED`, `PROCESSED`, `SKIPPED_DUPLICATE`, `RETRY_ATTEMPT`, `DLT_ROUTED`, `REPLAY_ATTEMPTED`, `REPLAY_SUCCESS`, `REPLAY_FAILED`, `SAGA_COMPENSATION_TRIGGERED`, `SAGA_COMPENSATION_COMPLETED`, `SAGA_COMPENSATION_PENDING`, `SAGA_RECOVERY_STARTED`, `SAGA_RECOVERY_SUCCESS`.
+  - Secret redaction: Zero passwords, JWTs, card numbers, or authorization headers logged. Error messages scrubbed via `OutboxEventPublisher.sanitizeErrorMessage()`.
+- **Operational Metrics (Micrometer & Prometheus):**
+  - **Kafka Native Consumer Lag:** `kafka.consumer.fetch.manager.records.lag.max` (max lag) and `kafka.consumer.fetch.manager.records.lag` (per-partition lag) registered via `MicrometerConsumerListener`.
+  - **Outbox State Gauges:** `events.outbox.pending` (backlog awaiting publish) and `events.outbox.failed` (terminal failures).
+  - **Outbox Counters & Timers:** `events.outbox.published` (`topic`, `event_type`, `outcome`), `events.outbox.duration` (latency timer).
+  - **Consumer Counters & Timers:** `events.consumer.processed` (`topic`, `event_type`, `outcome`), `events.consumer.duration`, `events.consumer.retries`, `events.consumer.dlt` (`topic`, `event_type`, `reason`).
+  - **Saga Metrics:** `saga.compensation.pending` (gauge of orders awaiting recovery), `saga.compensation.total` (`outcome`).
+  - **DLT Replay:** `events.dlt.replay` (`topic`, `outcome`).
+  - **Downstream Dependency Health:** `ProductServiceHealthIndicator` reporting Circuit Breaker availability (`productService: UP/DOWN`).
+  - **Bounded Cardinality:** Metric labels strictly limited to static strings (`topic`, `event_type`, `outcome`, `reason`). No unbounded IDs (e.g. `orderId`, `eventId`, `correlationId`) as tags.
+- **Actuator & Prometheus Endpoints:**
+  - `GET /actuator/health` (public component health status).
+  - `GET /actuator/prometheus` (Prometheus scrape endpoint, RBAC-secured).
+  - `GET /actuator/metrics` (Micrometer metrics catalog, RBAC-secured).
+  - `POST /api/v1/orders/admin/dlt/replay` (Admin endpoint for controlled DLT replay).
+- **Prometheus Scrape & Alert Configuration:**
+  - Scrape configurations for microservices defined in [monitoring/prometheus/prometheus.yml](file:///monitoring/prometheus/prometheus.yml).
+  - 9 production-ready alert rules in [monitoring/prometheus/alerts.yml](file:///monitoring/prometheus/alerts.yml):
+    - `KafkaConsumerLagGrowth` (>100 records for 2m)
+    - `ConsumerLagCritical` (>500 records for 1m)
+    - `PoisonMessagesDetected` (increase in DLT events)
+    - `ConsumerFailureRateHigh` (>5% error rate for 2m)
+    - `OutboxBacklogGrowing` (>50 pending events for 3m)
+    - `OutboxTerminalFailuresDetected` (events marked FAILED)
+    - `SagaCompensationsPending` (pending compensation > 5m)
+    - `DownstreamProductServiceUnavailable` (Product Service circuit breaker OPEN)
+    - `KafkaBrokerUnavailable` (Kafka health DOWN)
+- **Incident Runbooks Summary:**
+  - **Poison Messages:** Inspect DLT topics (`*.dlt`) with non-secret payload logging, diagnose root cause, fix upstream or deploy patch, replay via `POST /api/v1/orders/admin/dlt/replay`.
+  - **Consumer Lag Growth:** Monitor `kafka.consumer.fetch.manager.records.lag.max`, check partition distribution and consumer thread pool, scale consumer instances horizontally if processing capacity is bottlenecked.
+  - **Kafka Broker Outages:** Transactional outbox retains events in PostgreSQL (`PENDING`) with exponential backoff; automatically drains queue when broker recovers without data loss or message duplication.
+  - **Downstream Product Service Outages:** Resilience4j circuit breaker fast-fails, orders isolate in `COMPENSATION_PENDING`, periodic `SagaCompensationRecoveryService` heals inconsistent state upon service restoration.
+- **Event Operations Test Suite:**
+  - `mvn test -Dtest=EventMetricsTest,ProductServiceHealthIndicatorTest,EventOperationsIntegrationTest -pl order-service`
+
 
 ## Distributed Tracing with OpenTelemetry
 - **W3C Trace Context Propagation:** Standard `traceparent` headers (`00-{traceId}-{spanId}-{flags}`) validated, generated when missing/malformed, and propagated across API Gateway (8080) -> Order Service (8083) -> Product Service (8082) via OpenFeign, and into Kafka message records for `order.created`.

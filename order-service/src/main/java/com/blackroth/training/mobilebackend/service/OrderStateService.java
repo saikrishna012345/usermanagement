@@ -12,6 +12,8 @@ import com.blackroth.training.mobilebackend.repository.OrderRepository;
 import com.blackroth.training.mobilebackend.repository.OutboxEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,8 @@ import java.util.UUID;
 
 @Service
 public class OrderStateService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderStateService.class);
 
     private final OrderRepository orderRepository;
     private final OutboxEventRepository outboxEventRepository;
@@ -39,7 +43,10 @@ public class OrderStateService {
     @Transactional
     public Order savePendingOrder(Order order) {
         order.setStatus(OrderStatus.PENDING);
-        return orderRepository.saveAndFlush(order);
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        log.info("Order created: orderId={}, userId={}, totalAmount={}, status=PENDING, service=order-service, outcome=ORDER_CREATED",
+                savedOrder.getId(), savedOrder.getUserId(), savedOrder.getTotalAmount());
+        return savedOrder;
     }
 
     @Transactional
@@ -57,6 +64,8 @@ public class OrderStateService {
         order.setStatus(OrderStatus.CONFIRMED);
         Order savedOrder = orderRepository.saveAndFlush(order);
         saveOutboxEvent(savedOrder, EventTypes.ORDER_CREATED, TopicNames.ORDER_CREATED);
+        log.info("Order state transition: orderId={}, previousStatus=PENDING, newStatus=CONFIRMED, service=order-service, outcome=ORDER_CONFIRMED",
+                savedOrder.getId());
         return savedOrder;
     }
 
@@ -76,7 +85,10 @@ public class OrderStateService {
             );
         }
         order.setStatus(OrderStatus.COMPENSATION_PENDING);
-        return orderRepository.saveAndFlush(order);
+        Order savedOrder = orderRepository.saveAndFlush(order);
+        log.warn("Order state transition: orderId={}, previousStatus=PENDING, newStatus=COMPENSATION_PENDING, service=order-service, outcome=SAGA_COMPENSATION_PENDING",
+                savedOrder.getId());
+        return savedOrder;
     }
 
     @Transactional
@@ -85,6 +97,7 @@ public class OrderStateService {
         if (order.getStatus() == OrderStatus.CANCELLED) {
             return order;
         }
+        OrderStatus previousStatus = order.getStatus();
         if (order.getStatus() != OrderStatus.PENDING
                 && order.getStatus() != OrderStatus.COMPENSATION_PENDING) {
             throw new BusinessException(
@@ -95,6 +108,8 @@ public class OrderStateService {
         order.setStatus(OrderStatus.CANCELLED);
         Order savedOrder = orderRepository.saveAndFlush(order);
         saveOutboxEvent(savedOrder, EventTypes.ORDER_CANCELLED, TopicNames.ORDER_CANCELLED);
+        log.info("Order state transition: orderId={}, previousStatus={}, newStatus=CANCELLED, service=order-service, outcome=ORDER_CANCELLED",
+                savedOrder.getId(), previousStatus);
         return savedOrder;
     }
 
@@ -113,6 +128,8 @@ public class OrderStateService {
         order.setStatus(OrderStatus.SHIPPED);
         Order savedOrder = orderRepository.saveAndFlush(order);
         saveOutboxEvent(savedOrder, EventTypes.ORDER_SHIPPED, TopicNames.ORDER_SHIPPED);
+        log.info("Order state transition: orderId={}, previousStatus=CONFIRMED, newStatus=SHIPPED, service=order-service, outcome=ORDER_SHIPPED",
+                savedOrder.getId());
         return savedOrder;
     }
 
@@ -131,6 +148,8 @@ public class OrderStateService {
         order.setStatus(OrderStatus.DELIVERED);
         Order savedOrder = orderRepository.saveAndFlush(order);
         saveOutboxEvent(savedOrder, EventTypes.ORDER_DELIVERED, TopicNames.ORDER_DELIVERED);
+        log.info("Order state transition: orderId={}, previousStatus=SHIPPED, newStatus=DELIVERED, service=order-service, outcome=ORDER_DELIVERED",
+                savedOrder.getId());
         return savedOrder;
     }
 
@@ -169,6 +188,8 @@ public class OrderStateService {
             outboxEvent.setNextAttemptAt(now);
 
             outboxEventRepository.save(outboxEvent);
+            log.info("Outbox event created: eventId={}, eventType={}, topic={}, orderId={}, correlationId={}, status=PENDING, service=order-service, outcome=OUTBOX_SAVED",
+                    eventId, eventType, topic, order.getId(), correlationId);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException(
                     "Unable to serialize " + eventType + " event",

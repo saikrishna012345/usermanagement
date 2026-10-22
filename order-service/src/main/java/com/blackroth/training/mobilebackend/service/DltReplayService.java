@@ -18,12 +18,23 @@ public class DltReplayService {
 
     private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
     private final ConsumerFactory<String, OrderCreatedEvent> consumerFactory;
+    private final com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics;
 
     public DltReplayService(
             KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
             ConsumerFactory<String, OrderCreatedEvent> consumerFactory) {
+        this(kafkaTemplate, consumerFactory, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DltReplayService(
+            KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
+            ConsumerFactory<String, OrderCreatedEvent> consumerFactory,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics) {
         this.kafkaTemplate = kafkaTemplate;
         this.consumerFactory = consumerFactory;
+        this.eventMetrics = eventMetrics;
     }
 
     public boolean replayEvent(OrderCreatedEvent event) {
@@ -50,12 +61,18 @@ public class DltReplayService {
                     .get(5, TimeUnit.SECONDS);
 
             long durationMs = System.currentTimeMillis() - startTime;
+            if (eventMetrics != null) {
+                eventMetrics.recordDltReplay("order.created", "success");
+            }
             log.info("DLT replay succeeded: eventId={}, orderId={}, targetTopic=order.created, durationMs={}, outcome=REPLAY_SUCCESS",
                     event.eventId(), event.orderId(), durationMs);
             return true;
 
         } catch (Exception e) {
             long durationMs = System.currentTimeMillis() - startTime;
+            if (eventMetrics != null) {
+                eventMetrics.recordDltReplay("order.created", "failure");
+            }
             log.error("DLT replay failed: eventId={}, orderId={}, targetTopic=order.created, durationMs={}, error={}, outcome=REPLAY_FAILED",
                     event.eventId(), event.orderId(), durationMs, e.getMessage(), e);
             return false;

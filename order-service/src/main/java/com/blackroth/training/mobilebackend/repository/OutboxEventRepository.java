@@ -15,4 +15,6 @@ public interface OutboxEventRepository
             String status,
             Instant now
     );
+
+    long countByStatus(String status);
 }

@@ -21,11 +21,21 @@ import org.springframework.util.backoff.FixedBackOff;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 
+import com.blackroth.training.mobilebackend.metrics.EventMetrics;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.kafka.DefaultKafkaConsumerFactoryCustomizer;
+import org.springframework.kafka.core.MicrometerConsumerListener;
+
 import java.util.HashMap;
 import java.util.Map;
 
 @Configuration
 public class KafkaConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaConfig.class);
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
@@ -162,16 +172,40 @@ public class KafkaConfig {
     }
 
     @Bean
+    public DefaultKafkaConsumerFactoryCustomizer kafkaConsumerMetricsCustomizer(
+            @Autowired(required = false) MeterRegistry meterRegistry) {
+        return consumerFactory -> {
+            if (meterRegistry != null) {
+                consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+            }
+        };
+    }
+
     public DefaultErrorHandler kafkaErrorHandler(
             KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate) {
+        return kafkaErrorHandler(kafkaTemplate, null);
+    }
+
+    @Bean
+    public DefaultErrorHandler kafkaErrorHandler(
+            KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
+            @Autowired(required = false) EventMetrics eventMetrics) {
 
         DeadLetterPublishingRecoverer recoverer =
                 new DeadLetterPublishingRecoverer(
                         kafkaTemplate,
-                        (record, exception) -> new TopicPartition(
-                                record.topic() + ".dlt",
-                                record.partition()
-                        )
+                        (record, exception) -> {
+                            if (eventMetrics != null) {
+                                String reason = exception != null && exception.getCause() != null
+                                        ? exception.getCause().getClass().getSimpleName()
+                                        : (exception != null ? exception.getClass().getSimpleName() : "unknown");
+                                eventMetrics.recordConsumerDlt(record.topic(), "OrderCreated", reason);
+                            }
+                            return new TopicPartition(
+                                    record.topic() + ".dlt",
+                                    record.partition()
+                            );
+                        }
                 );
 
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
@@ -183,6 +217,15 @@ public class KafkaConfig {
                 org.springframework.messaging.converter.MessageConversionException.class,
                 org.springframework.kafka.support.serializer.DeserializationException.class
         );
+
+        errorHandler.setRetryListeners((record, ex, deliveryAttempt) -> {
+            log.warn("Kafka consumer retry attempt: topic={}, partition={}, offset={}, deliveryAttempt={}, error={}, outcome=RETRY_ATTEMPT",
+                    record.topic(), record.partition(), record.offset(), deliveryAttempt, ex.getMessage());
+            if (eventMetrics != null) {
+                eventMetrics.recordConsumerRetry(record.topic(), "OrderCreated");
+            }
+        });
+
         return errorHandler;
     }
 
@@ -197,6 +240,7 @@ public class KafkaConfig {
 
         factory.setConsumerFactory(consumerFactory);
         factory.setCommonErrorHandler(kafkaErrorHandler);
+        factory.getContainerProperties().setMicrometerEnabled(true);
 
         return factory;
     }

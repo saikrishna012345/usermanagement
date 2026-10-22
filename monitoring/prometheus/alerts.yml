@@ -1,0 +1,90 @@
+groups:
+  - name: event-driven-microservices-alerts
+    rules:
+      - alert: KafkaConsumerLagGrowth
+        expr: kafka_consumer_fetch_manager_records_lag_max > 100
+        for: 2m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "High Kafka Consumer Lag Detected"
+          description: "Kafka consumer lag on order-service has exceeded 100 records for 2 minutes (current lag: {{ $value }}). Indicates processing bottleneck or downstream slowdown."
+
+      - alert: ConsumerLagCritical
+        expr: kafka_consumer_fetch_manager_records_lag_max > 500
+        for: 1m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Critical Kafka Consumer Lag Backlog"
+          description: "Kafka consumer lag has exceeded 500 records. Risk of SLA breach or partition starvation."
+
+      - alert: PoisonMessagesDetected
+        expr: increase(events_consumer_dlt_total[2m]) > 0
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Poison Message Routed to Dead Letter Topic"
+          description: "Fatal or exhausted event routed to DLT (total: {{ $value }}). Requires operational inspection and manual replay via DltReplayService."
+
+      - alert: ConsumerFailureRateHigh
+        expr: rate(events_consumer_processed_total{outcome="failure"}[5m]) / rate(events_consumer_processed_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Consumer Error Rate Exceeds 5%"
+          description: "More than 5% of incoming Kafka events are failing to process over the last 5 minutes."
+
+      - alert: OutboxBacklogGrowing
+        expr: events_outbox_pending > 50
+        for: 3m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Outbox Pending Events Backlog Growing"
+          description: "Outbox table has more than 50 events pending publication for over 3 minutes (current: {{ $value }}). Check Kafka producer health."
+
+      - alert: OutboxTerminalFailuresDetected
+        expr: events_outbox_failed > 0 or increase(events_outbox_published_total{outcome="failed"}[5m]) > 0
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Outbox Event Publishing Exhausted Retries"
+          description: "Outbox events have exceeded maximum retries (5) and marked FAILED. Immediate investigation required."
+
+      - alert: SagaCompensationsPending
+        expr: saga_compensation_pending > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Orders Pending Saga Compensation Recovery"
+          description: "Orders have remained in COMPENSATION_PENDING for over 5 minutes. Check downstream ProductService availability and SagaCompensationRecoveryService logs."
+
+      - alert: DownstreamProductServiceUnavailable
+        expr: health_status{component="productService"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Product Service Downstream Dependency Unavailable"
+          description: "ProductService circuit breaker is OPEN or health check failed. Order creation will trigger Saga compensations."
+
+      - alert: KafkaBrokerUnavailable
+        expr: health_status{component="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Apache Kafka Broker Unavailable"
+          description: "Kafka health indicator reported DOWN. Outbox publisher cannot forward messages; events will accumulate in PENDING status in PostgreSQL."

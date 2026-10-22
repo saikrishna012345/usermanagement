@@ -27,18 +27,31 @@ public class SagaCompensationRecoveryService {
     private final OrderRepository orderRepository;
     private final ProductClient productClient;
     private final OrderStateService orderStateService;
+    private final com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics;
 
     @Value("${saga.recovery.enabled:true}")
-    private boolean enabled;
+    private boolean enabled = true;
 
     public SagaCompensationRecoveryService(
             OrderRepository orderRepository,
             ProductClient productClient,
             OrderStateService orderStateService
     ) {
+        this(orderRepository, productClient, orderStateService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SagaCompensationRecoveryService(
+            OrderRepository orderRepository,
+            ProductClient productClient,
+            OrderStateService orderStateService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics
+    ) {
         this.orderRepository = orderRepository;
         this.productClient = productClient;
         this.orderStateService = orderStateService;
+        this.eventMetrics = eventMetrics;
     }
 
     @Scheduled(fixedDelayString = "${saga.recovery.fixed-delay-ms:10000}")
@@ -52,7 +65,8 @@ public class SagaCompensationRecoveryService {
             return 0;
         }
 
-        log.info("Found {} orders in COMPENSATION_PENDING requiring Saga compensation recovery", pendingOrders.size());
+        log.info("Found {} orders in COMPENSATION_PENDING requiring Saga compensation recovery, service=order-service, outcome=SAGA_RECOVERY_STARTED",
+                pendingOrders.size());
         int recoveredCount = 0;
 
         for (Order order : pendingOrders) {
@@ -66,7 +80,8 @@ public class SagaCompensationRecoveryService {
     }
 
     private boolean recoverOrderCompensation(Order order) {
-        log.info("Attempting Saga compensation recovery for orderId={}", order.getId());
+        log.info("Attempting Saga compensation recovery for orderId={}, service=order-service, outcome=SAGA_RECOVERY_ATTEMPTED",
+                order.getId());
         boolean allItemsReleased = true;
 
         for (OrderItem item : order.getOrderItems()) {
@@ -75,16 +90,16 @@ public class SagaCompensationRecoveryService {
                         productClient.releaseReservation(item.getProductId(), order.getId());
 
                 if (response == null || !response.success()) {
-                    log.warn("Downstream releaseReservation returned unsuccessful for orderId={}, productId={}",
+                    log.warn("Downstream releaseReservation returned unsuccessful for orderId={}, productId={}, service=order-service, outcome=RELEASE_FAILED",
                             order.getId(), item.getProductId());
                     allItemsReleased = false;
                 }
             } catch (ResourceNotFoundException notFound) {
                 // Idempotent: reservation was never created or already released
-                log.info("Reservation not found during recovery for orderId={}, productId={}; treating as released",
+                log.info("Reservation not found during recovery for orderId={}, productId={}, service=order-service, outcome=ALREADY_RELEASED",
                         order.getId(), item.getProductId());
             } catch (Exception ex) {
-                log.error("Failed to release reservation during recovery for orderId={}, productId={}: {}",
+                log.error("Failed to release reservation during recovery for orderId={}, productId={}, service=order-service, error={}",
                         order.getId(), item.getProductId(), ex.getMessage());
                 allItemsReleased = false;
             }
@@ -93,16 +108,25 @@ public class SagaCompensationRecoveryService {
         if (allItemsReleased) {
             try {
                 orderStateService.markCancelled(order.getId());
-                log.info("Successfully recovered Saga for orderId={}: transitioned to CANCELLED with ORDER_CANCELLED event",
+                if (eventMetrics != null) {
+                    eventMetrics.recordSagaCompensation("recovered");
+                }
+                log.info("Successfully recovered Saga for orderId={}: transitioned to CANCELLED with ORDER_CANCELLED event, service=order-service, outcome=SAGA_RECOVERY_SUCCESS",
                         order.getId());
                 return true;
             } catch (Exception ex) {
-                log.error("Failed to mark order CANCELLED after releasing reservations for orderId={}: {}",
+                if (eventMetrics != null) {
+                    eventMetrics.recordSagaCompensation("failed");
+                }
+                log.error("Failed to mark order CANCELLED after releasing reservations for orderId={}, service=order-service, error={}",
                         order.getId(), ex.getMessage());
                 return false;
             }
         } else {
-            log.warn("Saga compensation recovery incomplete for orderId={}; remains in COMPENSATION_PENDING",
+            if (eventMetrics != null) {
+                eventMetrics.recordSagaCompensation("failed");
+            }
+            log.warn("Saga compensation recovery incomplete for orderId={}: remains in COMPENSATION_PENDING, service=order-service, outcome=SAGA_RECOVERY_INCOMPLETE",
                     order.getId());
             return false;
         }

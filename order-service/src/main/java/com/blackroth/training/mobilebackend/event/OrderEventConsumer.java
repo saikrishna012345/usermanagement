@@ -24,18 +24,27 @@ public class OrderEventConsumer {
 
     private final ProcessedEventRepository processedEventRepository;
     private final Tracer tracer;
+    private final com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics;
 
     public OrderEventConsumer(
             ProcessedEventRepository processedEventRepository) {
-        this(processedEventRepository, null);
+        this(processedEventRepository, null, null);
+    }
+
+    public OrderEventConsumer(
+            ProcessedEventRepository processedEventRepository,
+            Tracer tracer) {
+        this(processedEventRepository, tracer, null);
     }
 
     @Autowired
     public OrderEventConsumer(
             ProcessedEventRepository processedEventRepository,
-            @Autowired(required = false) Tracer tracer) {
+            @Autowired(required = false) Tracer tracer,
+            @Autowired(required = false) com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics) {
         this.processedEventRepository = processedEventRepository;
         this.tracer = tracer;
+        this.eventMetrics = eventMetrics;
     }
 
     @KafkaListener(
@@ -126,6 +135,10 @@ public class OrderEventConsumer {
             if (event == null) {
                 log.error("Consumer event rejected: payload=null, topic={}, partition={}, offset={}, outcome=DLT_ROUTED",
                         topic, partition, offset);
+                if (eventMetrics != null) {
+                    eventMetrics.recordConsumerDlt(topic, "unknown", "null_payload");
+                    eventMetrics.recordConsumerProcessed(topic, "unknown", "dlt_routed");
+                }
                 throw new IllegalArgumentException("Order event must not be null");
             }
 
@@ -141,6 +154,10 @@ public class OrderEventConsumer {
                 if (consumerSpan != null) {
                     consumerSpan.error(ex);
                 }
+                if (eventMetrics != null) {
+                    eventMetrics.recordConsumerDlt(topic, event.eventType(), "validation_error");
+                    eventMetrics.recordConsumerProcessed(topic, event.eventType(), "dlt_routed");
+                }
                 throw ex;
             }
 
@@ -149,6 +166,10 @@ public class OrderEventConsumer {
 
             if (processedEventRepository.existsByEventId(event.eventId())) {
                 long durationMs = System.currentTimeMillis() - startTime;
+                if (eventMetrics != null) {
+                    eventMetrics.recordConsumerProcessed(topic, event.eventType(), "duplicate");
+                    eventMetrics.recordConsumerDuration(topic, event.eventType(), "duplicate", durationMs);
+                }
                 log.warn("Duplicate event skipped: eventId={}, eventType={}, orderId={}, topic={}, partition={}, offset={}, durationMs={}, outcome=SKIPPED_DUPLICATE",
                         event.eventId(), event.eventType(), event.orderId(), topic, partition, offset, durationMs);
                 return;
@@ -162,12 +183,19 @@ public class OrderEventConsumer {
             );
 
             long durationMs = System.currentTimeMillis() - startTime;
+            if (eventMetrics != null) {
+                eventMetrics.recordConsumerProcessed(topic, event.eventType(), "success");
+                eventMetrics.recordConsumerDuration(topic, event.eventType(), "success", durationMs);
+            }
             log.info("Consumer event processed successfully: eventId={}, eventType={}, orderId={}, topic={}, partition={}, offset={}, durationMs={}, traceId={}, outcome=PROCESSED",
                     event.eventId(), event.eventType(), event.orderId(), topic, partition, offset, durationMs, traceId);
 
         } catch (RuntimeException ex) {
             if (consumerSpan != null) {
                 consumerSpan.error(ex);
+            }
+            if (eventMetrics != null && !(ex instanceof IllegalArgumentException)) {
+                eventMetrics.recordConsumerProcessed(topic, event != null ? event.eventType() : "unknown", "failure");
             }
             throw ex;
         } finally {

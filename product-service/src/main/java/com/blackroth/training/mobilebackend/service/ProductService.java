@@ -23,8 +23,13 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Service
 public class ProductService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductService.class);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -112,6 +117,8 @@ public class ProductService {
 
         if (orderId == null || orderId < 1
                 || quantity == null || quantity < 1) {
+            log.warn("Inventory reservation rejected: orderId={}, productId={}, quantity={}, service=product-service, outcome=INVALID_REQUEST",
+                    orderId, productId, quantity);
             throw new InvalidRequestException(
                     "Valid order ID and quantity are required");
         }
@@ -125,9 +132,13 @@ public class ProductService {
             if (existingReservation.getQuantity().equals(quantity)
                     && existingReservation.getStatus()
                     == InventoryReservation.Status.RESERVED) {
+                log.info("Inventory reservation matched existing: orderId={}, productId={}, quantity={}, service=product-service, outcome=ALREADY_RESERVED",
+                        orderId, productId, quantity);
                 return getProductById(productId);
             }
 
+            log.warn("Inventory reservation conflict: orderId={}, productId={}, existingStatus={}, existingQty={}, requestedQty={}, service=product-service, outcome=RESERVATION_CONFLICT",
+                    orderId, productId, existingReservation.getStatus(), existingReservation.getQuantity(), quantity);
             throw new BusinessException(
                     "A reservation already exists with a different state or quantity");
         }
@@ -137,6 +148,8 @@ public class ProductService {
                         "Product not found with id: " + productId));
 
         if (product.getStockQuantity() < quantity) {
+            log.warn("Inventory reservation failed (insufficient stock): orderId={}, productId={}, requestedQty={}, availableStock={}, service=product-service, outcome=INSUFFICIENT_STOCK",
+                    orderId, productId, quantity, product.getStockQuantity());
             throw new BusinessException(
                     "Insufficient stock for product: " + product.getName());
         }
@@ -146,6 +159,9 @@ public class ProductService {
 
         reservationRepository.saveAndFlush(
                 new InventoryReservation(orderId, productId, quantity));
+
+        log.info("Inventory reserved successfully: orderId={}, productId={}, quantity={}, remainingStock={}, service=product-service, outcome=RESERVED",
+                orderId, productId, quantity, updated.getStockQuantity());
 
         return toResponse(updated);
     }
@@ -162,10 +178,14 @@ public class ProductService {
                                 "Reservation not found for order: " + orderId));
 
         if (reservation.getStatus() == InventoryReservation.Status.RELEASED) {
+            log.info("Inventory reservation already released: orderId={}, productId={}, service=product-service, outcome=ALREADY_RELEASED",
+                    orderId, productId);
             return getProductById(productId);
         }
 
         if (reservation.getStatus() != InventoryReservation.Status.RESERVED) {
+            log.warn("Inventory release rejected (invalid status): orderId={}, productId={}, status={}, service=product-service, outcome=INVALID_STATUS",
+                    orderId, productId, reservation.getStatus());
             throw new BusinessException(
                     "Only reserved inventory can be released");
         }
@@ -182,6 +202,9 @@ public class ProductService {
         Product updated = productRepository.save(product);
         reservationRepository.save(reservation);
 
+        log.info("Inventory reservation released: orderId={}, productId={}, restoredQuantity={}, newStock={}, service=product-service, outcome=RELEASED",
+                orderId, productId, reservation.getQuantity(), updated.getStockQuantity());
+
         return toResponse(updated);
     }
 
@@ -193,16 +216,23 @@ public class ProductService {
                                 "Reservation not found for order: " + orderId));
 
         if (reservation.getStatus() == InventoryReservation.Status.COMMITTED) {
+            log.info("Inventory reservation already committed: orderId={}, productId={}, service=product-service, outcome=ALREADY_COMMITTED",
+                    orderId, productId);
             return;
         }
 
         if (reservation.getStatus() != InventoryReservation.Status.RESERVED) {
+            log.warn("Inventory commit rejected (invalid status): orderId={}, productId={}, status={}, service=product-service, outcome=INVALID_STATUS",
+                    orderId, productId, reservation.getStatus());
             throw new BusinessException(
                     "Only reserved inventory can be committed");
         }
 
         reservation.setStatus(InventoryReservation.Status.COMMITTED);
         reservationRepository.save(reservation);
+
+        log.info("Inventory reservation committed: orderId={}, productId={}, quantity={}, service=product-service, outcome=COMMITTED",
+                orderId, productId, reservation.getQuantity());
     }
 
 

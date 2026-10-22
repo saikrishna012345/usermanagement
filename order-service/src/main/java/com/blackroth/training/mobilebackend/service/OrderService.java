@@ -44,6 +44,7 @@ public class OrderService {
     private final ObjectMapper objectMapper;
     private final OrderStateService orderStateService;
     private final PaymentAuthorizationService paymentAuthorizationService;
+    private final com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -53,12 +54,27 @@ public class OrderService {
             OrderStateService orderStateService,
             PaymentAuthorizationService paymentAuthorizationService
     ) {
+        this(orderRepository, productClient, outboxEventRepository, objectMapper, orderStateService, paymentAuthorizationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderService(
+            OrderRepository orderRepository,
+            ProductClient productClient,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper,
+            OrderStateService orderStateService,
+            PaymentAuthorizationService paymentAuthorizationService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics
+    ) {
         this.orderRepository = orderRepository;
         this.productClient = productClient;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
         this.orderStateService = orderStateService;
         this.paymentAuthorizationService = paymentAuthorizationService;
+        this.eventMetrics = eventMetrics;
     }
 
 
@@ -218,8 +234,18 @@ public class OrderService {
 
             if (compensationSucceeded) {
                 orderStateService.markCancelled(savedOrder.getId());
+                if (eventMetrics != null) {
+                    eventMetrics.recordSagaCompensation("success");
+                }
+                log.info("Order Saga compensation completed: orderId={}, service=order-service, outcome=SAGA_COMPENSATION_COMPLETED",
+                        savedOrder.getId());
             } else {
                 orderStateService.markCompensationPending(savedOrder.getId());
+                if (eventMetrics != null) {
+                    eventMetrics.recordSagaCompensation("failed");
+                }
+                log.warn("Order Saga compensation pending recovery: orderId={}, service=order-service, outcome=SAGA_COMPENSATION_PENDING",
+                        savedOrder.getId());
             }
 
             throw new BusinessException(

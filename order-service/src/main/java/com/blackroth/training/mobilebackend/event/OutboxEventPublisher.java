@@ -30,16 +30,26 @@ public class OutboxEventPublisher {
     private final KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final Tracer tracer;
+    private final com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics;
 
     @Value("${outbox.publisher.enabled:true}")
-    private boolean enabled;
+    private boolean enabled = true;
 
     public OutboxEventPublisher(
             OutboxEventRepository outboxRepository,
             KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
             ObjectMapper objectMapper
     ) {
-        this(outboxRepository, kafkaTemplate, objectMapper, null);
+        this(outboxRepository, kafkaTemplate, objectMapper, null, null);
+    }
+
+    public OutboxEventPublisher(
+            OutboxEventRepository outboxRepository,
+            KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
+            ObjectMapper objectMapper,
+            Tracer tracer
+    ) {
+        this(outboxRepository, kafkaTemplate, objectMapper, tracer, null);
     }
 
     @Autowired
@@ -47,12 +57,14 @@ public class OutboxEventPublisher {
             OutboxEventRepository outboxRepository,
             KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate,
             ObjectMapper objectMapper,
-            @Autowired(required = false) Tracer tracer
+            @Autowired(required = false) Tracer tracer,
+            @Autowired(required = false) com.blackroth.training.mobilebackend.metrics.EventMetrics eventMetrics
     ) {
         this.outboxRepository = outboxRepository;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.tracer = tracer;
+        this.eventMetrics = eventMetrics;
     }
 
     @Scheduled(fixedDelayString = "${outbox.publisher.fixed-delay-ms:2000}")
@@ -136,6 +148,11 @@ public class OutboxEventPublisher {
 
             outboxRepository.save(event);
 
+            if (eventMetrics != null) {
+                eventMetrics.recordOutboxPublished(event.getTopic(), event.getEventType(), "published");
+                eventMetrics.recordOutboxDuration(event.getTopic(), event.getEventType(), "published", durationMs);
+            }
+
             if (priorAttempts > 0) {
                 log.info("Outbox event published successfully after retry: eventId={}, eventType={}, topic={}, orderId={}, attempt={}, durationMs={}, traceId={}, outcome=PUBLISHED",
                         event.getEventId(), event.getEventType(), event.getTopic(), event.getAggregateId(), priorAttempts + 1, durationMs, traceId);
@@ -167,6 +184,11 @@ public class OutboxEventPublisher {
                 event.setStatus("FAILED");
                 outboxRepository.save(event);
 
+                if (eventMetrics != null) {
+                    eventMetrics.recordOutboxPublished(event.getTopic(), event.getEventType(), "failed");
+                    eventMetrics.recordOutboxDuration(event.getTopic(), event.getEventType(), "failed", durationMs);
+                }
+
                 log.error("Outbox event publishing reached maximum attempts (terminal failure): eventId={}, eventType={}, topic={}, orderId={}, attempt={}/{}, durationMs={}, lastError={}, outcome=FAILED",
                         event.getEventId(), event.getEventType(), event.getTopic(), event.getAggregateId(), attempts, MAX_ATTEMPTS, durationMs, sanitizedError);
             } else {
@@ -174,6 +196,10 @@ public class OutboxEventPublisher {
                 Instant nextAttemptAt = Instant.now().plusSeconds(delaySeconds);
                 event.setNextAttemptAt(nextAttemptAt);
                 outboxRepository.save(event);
+
+                if (eventMetrics != null) {
+                    eventMetrics.recordOutboxPublished(event.getTopic(), event.getEventType(), "retry_scheduled");
+                }
 
                 log.warn("Outbox event publishing failed, scheduled for retry: eventId={}, eventType={}, topic={}, orderId={}, attempt={}/{}, nextAttemptAt={}, durationMs={}, lastError={}, outcome=RETRY_SCHEDULED",
                         event.getEventId(), event.getEventType(), event.getTopic(), event.getAggregateId(), attempts, MAX_ATTEMPTS, nextAttemptAt, durationMs, sanitizedError);

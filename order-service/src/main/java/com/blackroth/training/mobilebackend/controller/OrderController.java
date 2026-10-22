@@ -17,9 +17,19 @@ import java.util.List;
 @RequestMapping("/api/v1/orders")
 public class OrderController {
     private final OrderService service;
+    private final com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService;
 
     public OrderController(OrderService s) {
-        service = s;
+        this(s, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderController(
+            OrderService s,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService) {
+        this.service = s;
+        this.dltReplayService = dltReplayService;
     }
 
     @PostMapping
@@ -71,5 +81,17 @@ public class OrderController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<OrderResponse>> deliver(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Order delivered successfully", service.deliverOrder(id)));
+    }
+
+    @PostMapping("/admin/dlt/replay")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Boolean>> replayDlt(
+            @RequestBody com.blackroth.training.mobilebackend.event.OrderCreatedEvent event) {
+        if (dltReplayService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("DLT replay service is not available", "SERVICE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE.value()));
+        }
+        boolean replayed = dltReplayService.replayEvent(event);
+        return ResponseEntity.ok(ApiResponse.success("DLT event replayed successfully", replayed));
     }
 }
