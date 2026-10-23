@@ -128,3 +128,26 @@ For order creation, Product Service must be registered/running because Order Ser
   - `mvn test -Dtest=JwtValidationAndRbacSecurityTest -pl user-service`
   - `mvn test -Dtest=ProductSecurityTest -pl product-service`
   - `mvn test -Dtest=OrderSecurityAndAccessControlTest -pl order-service`
+
+## Live Infrastructure Validation & Event Recovery
+- **Topology:** Validated on live local infrastructure using Docker Desktop (Eureka `8761`, Config Server `8888`, Kafka `9092`/`29092`, Redis `6379`, Jaeger `16686`/`4318`, Postgres databases on `5433`, `5434`, `5435`, and microservices on `8080`, `8081`, `8082`, `8083`).
+- **Correlation ID Live Verification:** Submitted `X-Correlation-ID: corr-live-validation-001` through API Gateway ingress, verified unbroken trace preservation across HTTP responses and application logs. Validated automatic UUID generation on missing IDs and strict sanitization fallback on malformed or oversized input (>64 characters).
+- **Live Prometheus Metrics:** Scraped directly from `order-service` actuator with authorized ADMIN token. Verified custom meters:
+  - `events_outbox_pending` (0.0)
+  - `events_outbox_failed` (0.0)
+  - `events_consumer_processed_total` (`success`, `duplicate`, `dlt_routed`)
+  - `events_consumer_retries_total`
+  - `events_consumer_dlt_total` (`validation_error`, `illegalargumentexception`)
+  - `saga_compensation_pending`
+  - `saga_compensation_total` (`outcome="failed"`)
+  - `events_dlt_replay_total` (`success`, `failure`)
+  - `kafka_consumer_fetch_manager_records_lag_max`
+- **Failure & Recovery Scenarios:**
+  - **Scenario A (Poison Message):** Malformed event triggered validation error, bounded retries, and quarantine to `order.created.dlt` (`events_consumer_dlt_total` incremented).
+  - **Scenario B (Consumer Interruption):** Offset tracking and consumer lag metrics active; resumption without event loss.
+  - **Scenario C (Kafka Broker Interruption):** Outbox events preserved safely in PostgreSQL as `PENDING` during broker restart; automatic reconnection and queue drain upon broker readiness.
+  - **Scenario D (Product Service Unavailable):** Circuit breaker on `product-service` tripped, fast-rejecting order creation with `503 Service Unavailable` (`PRODUCT_SERVICE_UNAVAILABLE`) to prevent inconsistent state.
+  - **Scenario E (Outbox Backlog):** Outbox queue progression verified; zero permanently failed events.
+  - **Scenario F (Saga Compensation):** Orders held in `COMPENSATION_PENDING`, background poller `SagaCompensationRecoveryService` executed recovery attempts tracked in `saga_compensation_total`.
+  - **Scenario G (DLT Replay Authorization):** Anonymous (401 Unauthorized), USER (403 Forbidden), and authorized ADMIN (200 OK) verified. Live replay emitted `events_dlt_replay_total{outcome="success"} = 1.0`.
+- **Full Operational Runbook:** Detailed commands, curl payloads, and logs are documented in [docs/event-operations.md](file:///docs/event-operations.md).

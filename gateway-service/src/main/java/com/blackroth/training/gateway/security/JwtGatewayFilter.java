@@ -43,7 +43,7 @@ public class JwtGatewayFilter implements WebFilter {
 
     private boolean isPublic(org.springframework.http.HttpMethod method, String path) {
         if (path.startsWith("/api/v1/auth/") || path.equals("/api/v1/health")
-                || path.startsWith("/actuator") || path.startsWith("/swagger")
+                || path.equals("/actuator/health") || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs")) {
             return true;
         }
@@ -114,6 +114,10 @@ public class JwtGatewayFilter implements WebFilter {
 
             if (!ALLOWED_ROLES.contains(normalizedRole)) {
                 return reject(sanitizedExchange, HttpStatus.UNAUTHORIZED, "Invalid role claim: " + rawRole);
+            }
+
+            if (path.startsWith("/actuator") && !path.equals("/actuator/health") && !"ADMIN".equals(normalizedRole)) {
+                return reject(sanitizedExchange, HttpStatus.FORBIDDEN, "Admin access required for actuator management endpoints");
             }
 
             Object userIdObj = claims.get("userId");

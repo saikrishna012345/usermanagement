@@ -224,4 +224,48 @@ class OrderSecurityAndAccessControlTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> controller.deliver(10L));
         assertTrue(ex.getMessage().contains("Only SHIPPED orders can transition to DELIVERED"));
     }
+
+    @Test
+    void adminCanRetrieveExhaustedDiagnostics() {
+        OrderService service = mock(OrderService.class);
+        com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService recoveryService =
+                mock(com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService.class);
+        OrderController controller = new OrderController(service, null, recoveryService);
+
+        var diag = new com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService.CompensationDiagnostic(
+                3L, 4L, java.math.BigDecimal.valueOf(49999), 5, 5,
+                "PERMANENT_BUSINESS_CONFLICT", "Only reserved inventory can be released",
+                java.time.Instant.now(), java.time.Instant.now(), true
+        );
+        when(recoveryService.getExhaustedDiagnostics()).thenReturn(List.of(diag));
+
+        ResponseEntity<ApiResponse<List<com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService.CompensationDiagnostic>>> response =
+                controller.getExhaustedCompensations();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().isSuccess());
+        assertEquals(1, response.getBody().getData().size());
+        assertEquals(3L, response.getBody().getData().get(0).orderId());
+        verify(recoveryService).getExhaustedDiagnostics();
+    }
+
+    @Test
+    void adminCanReconcileExhaustedOrder() {
+        OrderService service = mock(OrderService.class);
+        com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService recoveryService =
+                mock(com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService.class);
+        OrderController controller = new OrderController(service, null, recoveryService);
+
+        when(recoveryService.reconcileOrder(3L, "Manual operator reconciliation")).thenReturn(true);
+
+        ResponseEntity<ApiResponse<Boolean>> response =
+                controller.reconcileCompensation(3L, "Manual operator reconciliation");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertTrue(response.getBody().isSuccess());
+        assertTrue(response.getBody().getData());
+        verify(recoveryService).reconcileOrder(3L, "Manual operator reconciliation");
+    }
 }

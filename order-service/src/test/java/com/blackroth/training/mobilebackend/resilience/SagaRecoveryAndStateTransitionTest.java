@@ -190,4 +190,194 @@ class SagaRecoveryAndStateTransitionTest {
         verifyNoInteractions(orderRepository);
         verifyNoInteractions(productClient);
     }
+
+    @Test
+    @DisplayName("Bounded Retries: Exceeding max recovery attempts skips downstream call and alerts operator")
+    void testBoundedRetriesExceedingMaxAttemptsSkipsDownstream() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new ProductServiceUnavailableException("Downstream timeout"));
+
+        // Exhaust 5 attempts
+        for (int i = 0; i < 5; i++) {
+            recoveryService.recoverPendingCompensations();
+        }
+
+        assertEquals(5, recoveryService.getRecoveryAttempts(ORDER_ID));
+        verify(productClient, times(5)).releaseReservation(PRODUCT_ID, ORDER_ID);
+
+        // 6th attempt should be SKIPPED due to MAX_RECOVERY_ATTEMPTS = 5
+        int recoveredCount = recoveryService.recoverPendingCompensations();
+        assertEquals(0, recoveredCount);
+        // Verify productClient was NOT called a 6th time
+        verify(productClient, times(5)).releaseReservation(PRODUCT_ID, ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("Transient Failure: Downstream timeout on first attempt followed by successful retry recovers order")
+    void testTransientDownstreamFailureFollowedBySuccessfulRetry() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+        when(orderRepository.findById(ORDER_ID))
+                .thenReturn(Optional.of(pendingOrder));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // Attempt 1: Transient 503, Attempt 2: 200 OK
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new ProductServiceUnavailableException("Transient 503 Service Unavailable"))
+                .thenReturn(new ProductClient.ProductApiResponse(true, 200, "Released", null, null, "2026-10-21T10:00:00"));
+
+        int firstPollRecovered = recoveryService.recoverPendingCompensations();
+        assertEquals(0, firstPollRecovered);
+        assertEquals(1, recoveryService.getRecoveryAttempts(ORDER_ID));
+        assertEquals(OrderStatus.COMPENSATION_PENDING, pendingOrder.getStatus());
+
+        int secondPollRecovered = recoveryService.recoverPendingCompensations();
+        assertEquals(1, secondPollRecovered);
+        assertEquals(0, recoveryService.getRecoveryAttempts(ORDER_ID));
+        assertEquals(OrderStatus.CANCELLED, pendingOrder.getStatus());
+        verify(productClient, times(2)).releaseReservation(PRODUCT_ID, ORDER_ID);
+        verify(orderRepository).saveAndFlush(pendingOrder);
+    }
+
+    @Test
+    @DisplayName("Permanent Failure: 409 Conflict immediately fast-fails to limit and records diagnostic")
+    void testPermanentFailureReachingRetryLimitFastFailsAndRecordsDiagnostic() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new BusinessException("Only reserved inventory can be released"));
+
+        int recoveredCount = recoveryService.recoverPendingCompensations();
+        assertEquals(0, recoveredCount);
+        assertEquals(SagaCompensationRecoveryService.MAX_RECOVERY_ATTEMPTS, recoveryService.getRecoveryAttempts(ORDER_ID));
+
+        SagaCompensationRecoveryService.CompensationDiagnostic diagnostic = recoveryService.getOrderDiagnostic(ORDER_ID);
+        assertNotNull(diagnostic);
+        assertEquals("PERMANENT_BUSINESS_CONFLICT", diagnostic.failureType());
+        assertTrue(diagnostic.lastFailureReason().contains("Only reserved inventory can be released"));
+        assertTrue(diagnostic.requiresManualIntervention());
+
+        // Subsequent poll skips without calling productClient again
+        recoveryService.recoverPendingCompensations();
+        verify(productClient, times(1)).releaseReservation(PRODUCT_ID, ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("Dependency Recovery: Service unavailable for multiple polls recovers once dependency is restored")
+    void testRecoveryAfterDependencyBecomesAvailable() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+        when(orderRepository.findById(ORDER_ID))
+                .thenReturn(Optional.of(pendingOrder));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new ProductServiceUnavailableException("Connection refused"))
+                .thenThrow(new ProductServiceUnavailableException("Connection refused"))
+                .thenReturn(new ProductClient.ProductApiResponse(true, 200, "Released", null, null, "2026-10-21T10:00:00"));
+
+        assertEquals(0, recoveryService.recoverPendingCompensations());
+        assertEquals(1, recoveryService.getRecoveryAttempts(ORDER_ID));
+
+        assertEquals(0, recoveryService.recoverPendingCompensations());
+        assertEquals(2, recoveryService.getRecoveryAttempts(ORDER_ID));
+
+        // Dependency back online
+        assertEquals(1, recoveryService.recoverPendingCompensations());
+        assertEquals(0, recoveryService.getRecoveryAttempts(ORDER_ID));
+        assertEquals(OrderStatus.CANCELLED, pendingOrder.getStatus());
+    }
+
+    @Test
+    @DisplayName("Idempotent Compensation: Downstream ResourceNotFoundException is treated as already released and succeeds")
+    void testIdempotentCompensationWhenDownstreamAlreadyReleased() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+        when(orderRepository.findById(ORDER_ID))
+                .thenReturn(Optional.of(pendingOrder));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        // Downstream throws ResourceNotFoundException (reservation was already released or not found)
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new ResourceNotFoundException("Reservation not found for order: " + ORDER_ID));
+
+        int recoveredCount = recoveryService.recoverPendingCompensations();
+        assertEquals(1, recoveredCount);
+        assertEquals(OrderStatus.CANCELLED, pendingOrder.getStatus());
+        verify(productClient).releaseReservation(PRODUCT_ID, ORDER_ID);
+        verify(orderRepository).saveAndFlush(pendingOrder);
+    }
+
+    @Test
+    @DisplayName("Concurrent Recovery: Multiple concurrent recovery runs safely process pending orders without corruption")
+    void testConcurrentRecoveryAttemptsThreadSafety() throws Exception {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+        when(orderRepository.findById(ORDER_ID))
+                .thenReturn(Optional.of(pendingOrder));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenReturn(new ProductClient.ProductApiResponse(true, 200, "Released", null, null, "2026-10-21T10:00:00"));
+
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(4);
+        java.util.concurrent.Callable<Integer> task = () -> recoveryService.recoverPendingCompensations();
+
+        java.util.List<java.util.concurrent.Future<Integer>> futures = executor.invokeAll(List.of(task, task, task, task));
+        executor.shutdown();
+
+        int totalRecovered = 0;
+        for (java.util.concurrent.Future<Integer> f : futures) {
+            totalRecovered += f.get();
+        }
+
+        assertTrue(totalRecovered >= 1);
+        assertEquals(OrderStatus.CANCELLED, pendingOrder.getStatus());
+    }
+
+    @Test
+    @DisplayName("Diagnostics and Reconciliation: Operator can inspect exhausted diagnostics and manually reconcile order")
+    void testAccurateTerminalExhaustedStateAndOperatorVisibleDiagnostics() {
+        Order pendingOrder = createTestOrder(OrderStatus.COMPENSATION_PENDING);
+        when(orderRepository.findByStatus(OrderStatus.COMPENSATION_PENDING))
+                .thenReturn(List.of(pendingOrder));
+        when(orderRepository.findById(ORDER_ID))
+                .thenReturn(Optional.of(pendingOrder));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        when(productClient.releaseReservation(eq(PRODUCT_ID), eq(ORDER_ID)))
+                .thenThrow(new BusinessException("Only reserved inventory can be released"));
+
+        recoveryService.recoverPendingCompensations();
+
+        List<SagaCompensationRecoveryService.CompensationDiagnostic> exhausted = recoveryService.getExhaustedDiagnostics();
+        assertEquals(1, exhausted.size());
+        assertEquals(ORDER_ID, exhausted.get(0).orderId());
+        assertEquals(USER_ID, exhausted.get(0).userId());
+        assertEquals("PERMANENT_BUSINESS_CONFLICT", exhausted.get(0).failureType());
+        assertTrue(exhausted.get(0).requiresManualIntervention());
+
+        // Operator manual reconciliation
+        boolean reconciled = recoveryService.reconcileOrder(ORDER_ID, "Reconciled after warehouse stock audit");
+        assertTrue(reconciled);
+        assertEquals(OrderStatus.CANCELLED, pendingOrder.getStatus());
+        assertEquals(0, recoveryService.getExhaustedDiagnostics().size());
+        assertNull(recoveryService.getOrderDiagnostic(ORDER_ID));
+        assertEquals(0, recoveryService.getRecoveryAttempts(ORDER_ID));
+    }
 }

@@ -18,18 +18,28 @@ import java.util.List;
 public class OrderController {
     private final OrderService service;
     private final com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService;
+    private final com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService sagaRecoveryService;
 
     public OrderController(OrderService s) {
-        this(s, null);
+        this(s, null, null);
+    }
+
+    public OrderController(
+            OrderService s,
+            com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService) {
+        this(s, dltReplayService, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public OrderController(
             OrderService s,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
-            com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService) {
+            com.blackroth.training.mobilebackend.service.DltReplayService dltReplayService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService sagaRecoveryService) {
         this.service = s;
         this.dltReplayService = dltReplayService;
+        this.sagaRecoveryService = sagaRecoveryService;
     }
 
     @PostMapping
@@ -39,7 +49,7 @@ public class OrderController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("@orderSecurity.isOrderOwnerOrAdmin(authentication, #id)")
     public ResponseEntity<ApiResponse<OrderResponse>> get(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Order fetched successfully", service.getOrderById(id)));
     }
@@ -60,7 +70,7 @@ public class OrderController {
     }
 
     @PutMapping("/{id}/cancel")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("@orderSecurity.isOrderOwnerOrAdmin(authentication, #id)")
     public ResponseEntity<ApiResponse<OrderResponse>> cancel(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Order cancelled successfully", service.cancelOrder(id)));
     }
@@ -93,5 +103,27 @@ public class OrderController {
         }
         boolean replayed = dltReplayService.replayEvent(event);
         return ResponseEntity.ok(ApiResponse.success("DLT event replayed successfully", replayed));
+    }
+
+    @GetMapping("/admin/compensations/exhausted")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<com.blackroth.training.mobilebackend.service.SagaCompensationRecoveryService.CompensationDiagnostic>>> getExhaustedCompensations() {
+        if (sagaRecoveryService == null) {
+            return ResponseEntity.ok(ApiResponse.success("Saga recovery service not available", List.of()));
+        }
+        return ResponseEntity.ok(ApiResponse.success("Exhausted compensations retrieved", sagaRecoveryService.getExhaustedDiagnostics()));
+    }
+
+    @PostMapping("/admin/compensations/{id}/reconcile")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Boolean>> reconcileCompensation(
+            @PathVariable Long id,
+            @RequestParam(value = "notes", defaultValue = "Manual operator reconciliation") String notes) {
+        if (sagaRecoveryService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Saga recovery service not available", "SERVICE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE.value()));
+        }
+        boolean reconciled = sagaRecoveryService.reconcileOrder(id, notes);
+        return ResponseEntity.ok(ApiResponse.success("Order compensation reconciled successfully", reconciled));
     }
 }

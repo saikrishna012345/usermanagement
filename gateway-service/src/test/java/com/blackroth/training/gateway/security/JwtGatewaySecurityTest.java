@@ -287,4 +287,68 @@ class JwtGatewaySecurityTest {
 
         assertTrue(chainCalled.get(), "Public auth endpoint must proceed without token");
     }
+
+    @Test
+    void actuatorHealth_withoutToken_succeeds() {
+        MockServerHttpRequest request = MockServerHttpRequest
+                .method(HttpMethod.GET, "/actuator/health")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+        WebFilterChain chain = ex -> {
+            chainCalled.set(true);
+            return Mono.empty();
+        };
+
+        filter.filter(exchange, chain).block();
+
+        assertTrue(chainCalled.get(), "/actuator/health must be public for discovery and probes");
+    }
+
+    @Test
+    void actuatorPrometheus_withoutToken_returns401() {
+        MockServerHttpRequest request = MockServerHttpRequest
+                .method(HttpMethod.GET, "/actuator/prometheus")
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        filter.filter(exchange, ex -> Mono.empty()).block();
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+    }
+
+    @Test
+    void actuatorPrometheus_withUserRole_returns403() {
+        String userToken = generateToken(2L, "user@test.com", "USER", 60000);
+        MockServerHttpRequest request = MockServerHttpRequest
+                .method(HttpMethod.GET, "/actuator/prometheus")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken)
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        filter.filter(exchange, ex -> Mono.empty()).block();
+
+        assertEquals(HttpStatus.FORBIDDEN, exchange.getResponse().getStatusCode());
+    }
+
+    @Test
+    void actuatorPrometheus_withAdminRole_succeeds() {
+        String adminToken = generateToken(1L, "admin@test.com", "ADMIN", 60000);
+        MockServerHttpRequest request = MockServerHttpRequest
+                .method(HttpMethod.GET, "/actuator/prometheus")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                .build();
+        MockServerWebExchange exchange = MockServerWebExchange.from(request);
+
+        AtomicBoolean chainCalled = new AtomicBoolean(false);
+        WebFilterChain chain = ex -> {
+            chainCalled.set(true);
+            return Mono.empty();
+        };
+
+        filter.filter(exchange, chain).block();
+
+        assertTrue(chainCalled.get(), "/actuator/prometheus must be allowed for ADMIN");
+    }
 }

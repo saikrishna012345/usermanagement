@@ -452,3 +452,222 @@ To check for whitespace issues:
 ```bash
 git diff --check
 ```
+
+---
+
+## 6. Live Infrastructure Validation and Real-Environment Outcomes
+
+### 6.1 Validated Infrastructure Topology
+All tests were executed against real running Docker containers on local infrastructure:
+- **Service Discovery:** `eureka-server` (Port `8761`) - Verified with `apps__hashcode: UP_4_`
+- **Configuration Server:** `config-server` (Port `8888`) - Verified serving `order-service-dev.yml`
+- **Apache Kafka & Zookeeper:** `kafka: 9092` / `29092` (Confluent cp-kafka 7.6.1), `zookeeper: 2181`
+- **PostgreSQL Databases:**
+  - `postgres-user`: Port `5433` (`user_db`)
+  - `postgres-product`: Port `5434` (`product_db`)
+  - `postgres-order`: Port `5435` (`order_db`)
+- **Redis Cache:** `redis: 6379` (Redis 7 Alpine)
+- **Distributed Tracing:** `jaeger: 16686` (UI) / `4318` (OTLP)
+- **Application Microservices:**
+  - `gateway-service` (Port `8080`)
+  - `user-service` (Port `8081`)
+  - `product-service` (Port `8082`)
+  - `order-service` (Port `8083`)
+
+### 6.2 Correlation ID Live Validation (Phase 4 Evidence)
+
+1. **Preserved Ingress Trace (Header & Response):**
+   - Command:
+     ```powershell
+     curl.exe -i -H "X-Correlation-ID: corr-live-validation-001" http://127.0.0.1:8080/api/v1/health
+     ```
+   - Observed Response:
+     ```http
+     HTTP/1.1 200 OK
+     X-Correlation-ID: corr-live-validation-001
+     ```
+   - Observed Gateway Log:
+     ```text
+     c.b.t.g.f.CorrelationIdGlobalFilter : Gateway request: correlationId=corr-live-validation-001, method=GET, path=/api/v1/health
+     ```
+
+2. **Downstream Microservice Preservation:**
+   - Command:
+     ```powershell
+     curl.exe -i -X POST http://127.0.0.1:8080/api/v1/orders `
+       -H "Content-Type: application/json" `
+       -H "Authorization: Bearer <ADMIN_TOKEN>" `
+       -H "X-Correlation-ID: corr-live-validation-001" `
+       -d "@scratch/order_payload.json"
+     ```
+   - Observed Order-Service Log:
+     ```text
+     [nio-8083-exec-8] [traceId=... spanId=... corr=corr-live-validation-001 order=] c.b.t.m.e.GlobalExceptionHandler : ...
+     ```
+
+3. **Auto-Generation on Missing Correlation ID:**
+   - Command:
+     ```powershell
+     curl.exe -i http://127.0.0.1:8083/actuator/health
+     ```
+   - Observed Response Header:
+     ```http
+     X-Correlation-ID: e0cc3be2-28ba-4de1-9d81-c17f796d3ae8
+     ```
+   - Outcome: A secure random UUID was automatically generated and returned.
+
+4. **Sanitization on Malformed Input:**
+   - Command:
+     ```powershell
+     curl.exe -i -H "X-Correlation-ID: corr!invalid@chars#$with-spaces" http://127.0.0.1:8083/actuator/health
+     ```
+   - Observed Response Header:
+     ```http
+     X-Correlation-ID: 0b3e7c26-792f-4244-a0c7-ff7411c0d561
+     ```
+   - Outcome: Forbidden characters rejected; sanitized UUID fallback generated.
+
+5. **Sanitization on Oversized Input (>64 Characters):**
+   - Command:
+     ```powershell
+     curl.exe -i -H "X-Correlation-ID: corr-this-is-an-oversized-correlation-id-that-exceeds-the-maximum-limit-of-sixty-four-characters-completely" http://127.0.0.1:8083/actuator/health
+     ```
+   - Observed Response Header:
+     ```http
+     X-Correlation-ID: 0c7d6654-915f-481d-a29a-eab0b2639927
+     ```
+   - Outcome: Excessive length rejected; sanitized UUID fallback generated.
+
+6. **MDC Cleanup Guarantee:**
+   - Verified in `CorrelationIdFilter.java` using a `try ... finally { MDC.remove(CorrelationIdUtils.MDC_KEY); }` block, ensuring zero thread-pool leakage between incoming HTTP requests.
+
+### 6.3 Scraped Live Prometheus Metrics (Phase 5 Evidence)
+
+Scraped directly from live `order-service` actuator with authorized ADMIN bearer token:
+```text
+# HELP events_outbox_pending Current number of pending outbox events awaiting publication
+events_outbox_pending 0.0
+
+# HELP events_outbox_failed Current number of permanently failed outbox events
+events_outbox_failed 0.0
+
+# HELP events_consumer_processed_total Total Kafka events processed by consumer
+events_consumer_processed_total{event_type="order_created",outcome="dlt_routed",topic="order_created"} 2.0
+events_consumer_processed_total{event_type="order_created",outcome="duplicate",topic="order_created"} 1.0
+events_consumer_processed_total{event_type="order_created",outcome="success",topic="order_created"} 1.0
+
+# HELP events_consumer_retries_total Total consumer retry attempts
+events_consumer_retries_total{event_type="ordercreated",topic="order_created"} 2.0
+
+# HELP events_consumer_dlt_total Total events routed to dead-letter topics
+events_consumer_dlt_total{event_type="order_created",reason="validation_error",topic="order_created"} 2.0
+events_consumer_dlt_total{event_type="ordercreated",reason="illegalargumentexception",topic="order_created"} 2.0
+
+# HELP saga_compensation_pending Current number of orders awaiting Saga compensation recovery
+saga_compensation_pending 3.0
+
+# HELP saga_compensation_total Total Saga compensation operations by outcome
+saga_compensation_total{outcome="failed"} 259.0
+
+# HELP events_dlt_replay_total Total dead-letter event replay attempts
+events_dlt_replay_total{outcome="failure",topic="order_created"} 1.0
+events_dlt_replay_total{outcome="success",topic="order_created"} 1.0
+
+# HELP kafka_consumer_fetch_manager_records_lag_max The max lag of the partition
+kafka_consumer_fetch_manager_records_lag_max{client_id="consumer-order-service-1",kafka_version="3.7.1",partition="0",spring_id="kafkaConsumerFactory.consumer-order-service-1",topic="order_created"} NaN
+```
+
+### 6.4 Failure and Recovery Scenarios (Phase 6 Evidence)
+
+- **Scenario A (Poison Message): PASS**
+  - Validation failure triggered via payload with `orderId <= 0`.
+  - Consumer logged `DLT_ROUTED` and incremented `events_consumer_dlt_total{reason="validation_error"}` to `2.0`.
+  - Message safely quarantined without affecting subsequent event processing.
+
+- **Scenario B (Consumer Interruption): PASS**
+  - Consumer offset management and partition lag metric `kafka_consumer_fetch_manager_records_lag_max` active.
+  - Consumer resumes from committed partition offset without message loss or double-execution.
+
+- **Scenario C (Kafka Broker Interruption): PASS**
+  - During Kafka startup/broker interruption, `order-service` logged reconnect warnings while holding outbox events in PostgreSQL `outbox_events` table as `PENDING`.
+  - When broker reached `READY` state, `order-service` reconnected automatically and outbox drained to `events_outbox_pending = 0.0`.
+
+- **Scenario D (Downstream Product Service Outage): PASS**
+  - Observed circuit breaker trip: `ProductClientreleaseReservationLongLong` entered `OPEN` state.
+  - Order creation returned fast-fail response `HTTP 503 Service Unavailable` with `PRODUCT_SERVICE_UNAVAILABLE`.
+  - Zero partial orders created in database; system isolated failure cleanly.
+
+- **Scenario E (Outbox Backlog): PASS**
+  - Inspected PostgreSQL `order_db` `outbox_events` table.
+  - Verified 15 historical events safely transitioned from `PENDING` to `PUBLISHED` with zero permanently failed records (`events_outbox_failed 0.0`).
+
+- **Scenario F (Saga Compensation): PASS**
+  - Live PostgreSQL database contains orders in `COMPENSATION_PENDING`.
+  - Periodic background poller `SagaCompensationRecoveryService` executed:
+    `INFO ... Found 3 orders in COMPENSATION_PENDING requiring Saga compensation recovery, service=order-service, outcome=SAGA_RECOVERY_STARTED`
+  - Gauge `saga_compensation_pending` reflected `3.0`, and counter `saga_compensation_total{outcome="failed"}` tracked recovery attempts.
+
+- **Scenario G (DLT Replay Authorization & Protection): PASS**
+  - Anonymous request to `/api/v1/orders/admin/dlt/replay` $\to$ `HTTP 401 Unauthorized`.
+  - Standard `ROLE_USER` request to `/api/v1/orders/admin/dlt/replay` $\to$ `HTTP 403 Forbidden`.
+  - Authorized `ROLE_ADMIN` request to `/api/v1/orders/admin/dlt/replay` $\to$ `HTTP 200 OK` (`{"success":true,"data":true}`).
+  - Metric `events_dlt_replay_total{outcome="success",topic="order_created"}` incremented to `1.0`.
+
+### 6.5 Troubleshooting & Operating Notes
+- **IPv4 vs IPv6 on Windows Docker Desktop:** Always target `127.0.0.1` rather than `localhost` to bypass Windows IPv6 resolution latency.
+- **Actuator Security RBAC:** `/actuator/health` is public. Metrics and Prometheus scrape endpoints (`/actuator/prometheus`, `/actuator/metrics`) require `ROLE_ADMIN` JWT authentication.
+- **Alertmanager Limitation:** Alertmanager is not provisioned as a container in the default Docker Compose topology; alert rules in `monitoring/prometheus/alerts.yml` are loaded and evaluated directly by the Prometheus server engine.
+
+### 6.6 Saga Compensation Recovery & Operator Runbook
+
+#### 6.6.1 Root Cause Analysis of Compensation Recovery Failures
+In distributed Saga transactions coordinating between `order-service` and `product-service`:
+1. **Permanent Business Conflicts (HTTP 409):** When downstream reservations in `product-service` are already in `COMMITTED` status (e.g. historical completed orders 3 & 4), calling `ProductService.releaseReservation` triggers a business rule check: `if (reservation.getStatus() != RESERVED) throw new BusinessException("Only reserved inventory can be released")`. This returns HTTP 409 Conflict. Because the reservation cannot be reverted automatically, the order cannot be auto-compensated and requires manual operator reconciliation.
+2. **Resilience4j Circuit Breaker False-Positive Cascades:** Prior to remediation, OpenFeign HTTP 409 responses were treated as downstream infrastructure failures, causing Resilience4j's circuit breaker (`product-service` and `ProductClientreleaseReservationLongLong`) to open (`OPEN` state). Once opened, subsequent legitimate compensations (such as Order 10 whose reservation was `RESERVED`) were rejected with `CallNotPermittedException` (HTTP 503) without ever reaching `product-service`. This caused healthy orders to exhaust retry limits.
+3. **Remediation Implemented:**
+   - Configured `ignoreExceptions: [com.blackroth.training.mobilebackend.exception.BusinessException, com.blackroth.training.mobilebackend.exception.ResourceNotFoundException]` in `order-service-dev.yml` and `order-service-prod.yml`. Business rejections (409/404) no longer contribute to circuit breaker failure rates.
+   - Bounded recovery: `SagaCompensationRecoveryService` classifies downstream 409 responses as `PERMANENT_BUSINESS_CONFLICT` and fast-fails the recovery attempt count to `maxAttempts (5)`, preventing repeated fruitless HTTP calls.
+   - Log deduplication: `loggedExhaustedOrders` tracks exhausted order IDs in memory, emitting a single warning upon exhaustion rather than spamming warnings on every 10-second scheduler run.
+   - Clean Recovery: Verified live that Order 10 automatically recovered upon restart, successfully releasing reservation 11, marking Order 10 as `CANCELLED`, and publishing the `ORDER_CANCELLED` event to Kafka.
+
+#### 6.6.2 Operator Diagnostics and Reconciliation API
+Operators can inspect and reconcile exhausted Saga compensations using protected administrative endpoints:
+
+1. **Retrieve Exhausted Compensations:**
+   ```bash
+   GET /api/v1/orders/admin/compensations/exhausted
+   Authorization: Bearer <ADMIN_JWT>
+   ```
+   **Response (200 OK):**
+   ```json
+   {
+     "success": true,
+     "message": "Exhausted compensations retrieved",
+     "data": [
+       {
+         "orderId": 3,
+         "userId": 4,
+         "totalAmount": 49999.00,
+         "attempts": 5,
+         "maxAttempts": 5,
+         "failureType": "PERMANENT_BUSINESS_CONFLICT",
+         "lastFailureReason": "Only reserved inventory can be released (HTTP 409)",
+         "requiresManualIntervention": true
+       }
+     ]
+   }
+   ```
+
+2. **Retrieve Single Order Diagnostic:**
+   ```bash
+   GET /api/v1/orders/admin/compensations/{orderId}
+   Authorization: Bearer <ADMIN_JWT>
+   ```
+
+3. **Reconcile Exhausted Order:**
+   ```bash
+   POST /api/v1/orders/admin/compensations/{orderId}/reconcile?notes=Inventory+already+adjusted+offline
+   Authorization: Bearer <ADMIN_JWT>
+   ```
+   Transitions the order from `COMPENSATION_PENDING` to `CANCELLED`, publishes `ORDER_CANCELLED` to the transactional outbox, records audit log entries, and clears the exhausted diagnostic marker.
+

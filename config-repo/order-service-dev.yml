@@ -62,6 +62,9 @@ resilience4j:
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 2
         automaticTransitionFromOpenToHalfOpenEnabled: true
+        ignoreExceptions:
+          - com.blackroth.training.mobilebackend.exception.BusinessException
+          - com.blackroth.training.mobilebackend.exception.ResourceNotFoundException
     instances:
       product-service:
         baseConfig: default
